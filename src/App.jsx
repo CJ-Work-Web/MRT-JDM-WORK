@@ -44,15 +44,42 @@ import {
 } from 'lucide-react';
 
 /**
- * 安全配置加固：
- * 使用系統環境提供的變數注入配置資訊，不再硬編碼 API Key 等敏感資訊。
- * * 注意：這一行就是您要找的設定！
+ * 安全配置相容性加固邏輯：
+ * 為了避免在不支持 import.meta 的環境（如目前的沙盒）中報錯，
+ * 我們使用安全的檢查方式。同時確保在 Vercel 部署時能正確抓取環境變數。
  */
-const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+const getInitialConfig = () => {
+  // 1. 優先嘗試讀取 Gemini 環境變數
+  if (typeof __firebase_config !== 'undefined') {
+    return JSON.parse(__firebase_config);
+  }
+  
+  // 2. 嘗試讀取 Vite/Vercel 環境變數 (使用 try-catch 避免語法解析導致的空白畫面)
+  try {
+    // 注意：Vite 在構建時會靜態替換 import.meta.env
+    const envValue = import.meta.env.VITE_FIREBASE_CONFIG;
+    if (envValue) return JSON.parse(envValue);
+  } catch (e) {
+    // 忽略特定環境下的報錯
+  }
+  
+  return {}; // 預設空對象
+};
+
+const getInitialAppId = () => {
+  if (typeof __app_id !== 'undefined') return __app_id;
+  try {
+    return import.meta.env.VITE_APP_ID || 'mrt-jdm-repair';
+  } catch (e) {
+    return 'mrt-jdm-repair';
+  }
+};
+
+const firebaseConfig = getInitialConfig();
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = import.meta.env.VITE_APP_ID;
+const appId = getInitialAppId();
 
 // --- 全域常量與輔助函式定義 ---
 
@@ -167,7 +194,6 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
   const checklist = Array.isArray(item.jdmControl?.checklist) ? [...item.jdmControl.checklist] : [];
   const isMissingApproval = status === '結報' && !item.jdmControl?.approvalDate && item.repairType !== '2.1';
   
-  // 計算費用合計
   const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
 
   return (
@@ -195,7 +221,6 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
           {String(item.quoteTitle || '--')}
         </div>
       </td>
-      {/* 費用合計欄位 */}
       <td className="p-4 text-right">
         <div className="font-mono font-black text-rose-600 text-sm whitespace-nowrap">
           ${totalCost.toLocaleString()}
@@ -257,7 +282,6 @@ const App = () => {
   const [floatingTip, setFloatingTip] = useState({ show: false, text: '' });
   const [statusConfirm, setStatusConfirm] = useState({ show: false, target: '', message: '' });
 
-  // 匯入狀態管理
   const [importStatus, setImportStatus] = useState({
     isProcessingA: false,
     isProcessingB: false,
@@ -265,7 +289,6 @@ const App = () => {
     hasImportedB: false
   });
 
-  // 手動模式狀態
   const [isManualMode, setIsManualMode] = useState(false);
 
   const [dashboardFilter, setDashboardFilter] = useState({ 
@@ -298,7 +321,6 @@ const App = () => {
     return { subtotal: sub, tax, serviceFee: fee, final: sub + fee + tax };
   }, [formData.repairItems, formData.repairType]);
 
-  // 財務統計：本案收益計算邏輯 (已調整為 總收入 - 總費用)
   const financialStats = useMemo(() => {
     const totalCosts = formData.costItems.reduce((sum, item) => sum + (Number(item.costAmount) || 0), 0);
     const totalIncome = formData.incomeItems.reduce((sum, item) => sum + (Number(item.incomeAmount) || 0), 0);
@@ -661,9 +683,6 @@ const App = () => {
                 });
              }
              setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
-          } else {
-             setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
-             showMessage("已完成匯入 (未登入，僅限本次作業)", 'success');
           }
         } else {
           const parsedB = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }).slice(4).map(r => ({ 
@@ -679,13 +698,9 @@ const App = () => {
               updatedAt: serverTimestamp()
             });
             setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
-          } else {
-            setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
-            showMessage("已完成匯入 (未登入，僅限本次作業)", 'success');
           }
         }
       } catch (err) { 
-        console.error(err);
         if (type === 'A') setImportStatus(prev => ({ ...prev, isProcessingA: false }));
         else setImportStatus(prev => ({ ...prev, isProcessingB: false }));
         showMessage("檔案讀取或儲存錯誤", "error"); 
@@ -697,14 +712,12 @@ const App = () => {
   const handleSaveToCloud = async () => {
     if (!user) return;
     
-    // 邏輯：抽換/退件狀態下，備註為必填
     const needsRemarks = (['抽換', '退件'].includes(formData.jdmControl.status));
     if (needsRemarks && !formData.jdmControl.remarks.trim()) {
       showMessage("狀態為抽換或退件時，必須填寫案件備註", "error");
       return;
     }
 
-    // 邏輯：提報/結報狀態下，案號為必填
     const needsCaseNumber = (['提報', '結報'].includes(formData.jdmControl.status));
     if (needsCaseNumber && !formData.jdmControl.caseNumber.trim()) {
       showMessage("狀態為提報或結報時，JDM 系統案號必填", "error");
@@ -855,7 +868,6 @@ const App = () => {
     });
   }, [calculationSummary, isSyncEnabled]);
 
-  // 新增捲軸鎖定邏輯：開啟側邊欄時禁止主頁面捲動
   useEffect(() => {
     if (isCostSidebarOpen) {
       document.body.style.overflow = 'hidden';
@@ -1007,7 +1019,7 @@ const App = () => {
           )}
         </div>
         
-        {/* 固定底欄：本案收益統計數字 (已調整公式為 總收入 - 總費用) */}
+        {/* 固定底欄：本案收益統計數字 */}
         <div className="p-8 bg-white border-t-2 flex flex-col gap-4 shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.06)]">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
             <div className="flex flex-col">
@@ -1191,13 +1203,12 @@ const App = () => {
                       <label className="text-xs font-black text-slate-600 uppercase tracking-widest whitespace-nowrap shrink-0">客戶滿意度調查</label>
                       {formData.satisfactionScore !== null && (<div className="px-3 py-1 bg-slate-900 text-white rounded-xl text-xs font-black animate-in fade-in zoom-in-95 whitespace-nowrap">得分：{formData.satisfactionScore} 分</div>)}
                     </div>
-                    <div className="grid grid-cols-3 gap-3">{SATISFACTION_LEVELS.map((level) => { const isSelected = formData.satisfactionLevel === level.label; return (<label key={level.label} onClick={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, satisfactionLevel: isSelected ? '' : level.label, satisfactionScore: isSelected ? null : level.score })); }} className={`relative cursor-pointer transition-all p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 h-20 ${isSelected ? `${level.borderColor} ${level.bgColor} ring-2 ring-offset-1` : 'border-slate-100 bg-white hover:border-slate-200 shadow-sm'}`}><input type="radio" className="sr-only" checked={isSelected} readOnly /><div className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${isSelected ? `${level.color} border-white scale-125 shadow-sm` : 'border-slate-300'}`}></div><div className={`text-[11px] font-black text-center leading-tight ${isSelected ? level.textColor : 'text-slate-500'}`}>{String(level.label)}</div></label>); })}</div>
+                    <div className="grid grid-cols-3 gap-3">{SATISFACTION_LEVELS.map((level) => { const isSelected = formData.satisfactionLevel === level.label; return (<label key={level.label} onClick={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, satisfactionLevel: isSelected ? '' : level.label, satisfactionScore: isSelected ? null : level.score })); }} className={`relative cursor-pointer transition-all p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 h-20 ${isSelected ? `${level.borderColor} ${level.bgColor} ring-2 ring-offset-1` : 'border-slate-100 bg-white hover:border-slate-200 shadow-sm'}`}><input type="radio" className="sr-only" checked={isSelected} readOnly /><div className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${isSelected ? `${level.color} border-white scale-125 shadow-sm` : 'border-slate-300'}`}></div><div className={`text-[11px] font-black text-center whitespace-pre-wrap leading-tight ${isSelected ? level.textColor : 'text-slate-500'}`}>{String(level.label)}</div></label>); })}</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 5. JDM 報修進度 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
               <div className="flex items-center justify-between border-b pb-3 shrink-0 overflow-hidden"><h2 className="text-base font-black text-slate-900 uppercase tracking-widest whitespace-nowrap shrink-0 flex items-center gap-3">5. JDM 報修進度</h2></div>
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1211,7 +1222,7 @@ const App = () => {
                 <div className="lg:col-span-4 bg-slate-900 text-white p-6 rounded-3xl shadow-xl space-y-6">
                   <div><label className="text-xs font-black text-slate-400 uppercase flex items-center gap-3 tracking-widest whitespace-nowrap shrink-0"><Hash size={14} className="text-blue-400" /> JDM 系統案號</label><input type="text" className={`w-full px-4 py-2.5 text-sm rounded-xl bg-slate-800 text-white mt-1.5 outline-none focus:border-blue-500 font-mono font-black transition-all border ${getJdmFieldError('caseNumber') ? 'ring-2 ring-rose-500 border-rose-500' : 'border-slate-700'}`} value={formData.jdmControl.caseNumber} onChange={(e) => updateJdmField('caseNumber', e.target.value)} /></div>
                   <div className="space-y-3"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">目前狀態</label><div className="grid grid-cols-2 gap-3">{['提報', '結報', '抽換', '退件'].map((s) => { const is = formData.jdmControl.status === s; return (<label key={s} onClick={(e) => { e.preventDefault(); handleStatusClick(s); }} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${is ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-lg' : 'border-slate-800 bg-slate-800/50 text-slate-500 hover:border-slate-700'}`}><input type="radio" className="sr-only" checked={is} readOnly /><div className={`w-2.5 h-2.5 rounded-full shrink-0 ${is ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'}`}></div><span className="text-sm font-black whitespace-nowrap">{String(s)}</span></label>); })}</div></div>
-                  <div className="space-y-3"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">案件備註</label>{(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && (<div className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-black rounded border border-rose-500/30 animate-pulse uppercase whitespace-nowrap shrink-0">{jdmErrors.length > 0 ? "資料異常必填" : "變更原因必填"}</div>)}</div><div className="relative"><AutoResizeTextarea value={formData.jdmControl.remarks} onChange={(e) => updateJdmField('remarks', e.target.value)} className={`w-full p-4 rounded-2xl text-sm bg-slate-800 border-slate-700 text-white transition-all focus:border-blue-400 ${(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && !formData.jdmControl.remarks.trim() ? 'ring-2 ring-rose-500/50 border-rose-500' : ''}`} placeholder={(jdmErrors.length > 0 || ['退件', '抽換'].includes(formData.jdmControl.status)) ? "請說明異常或變更原因 (必填)" : "請輸入案件備註 o或退補原因"} /></div></div>
+                  <div className="space-y-3"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">案件備註</label>{(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && (<div className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-black rounded border border-rose-500/30 animate-pulse uppercase whitespace-nowrap shrink-0">{jdmErrors.length > 0 ? "資料異常必填" : "變更原因必填"}</div>)}</div><div className="relative"><AutoResizeTextarea value={formData.jdmControl.remarks} onChange={(e) => updateJdmField('remarks', e.target.value)} className={`w-full p-4 rounded-2xl text-sm bg-slate-800 border-slate-700 text-white transition-all focus:border-blue-400 ${(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && !formData.jdmControl.remarks.trim() ? 'ring-2 ring-rose-500/50 border-rose-500' : ''}`} placeholder={(jdmErrors.length > 0 || ['退件', '抽換'].includes(formData.jdmControl.status)) ? "請說明異常或變更原因 (必填)" : "請輸入案件備註或退補原因"} /></div></div>
                 </div>
               </div>
             </div>
@@ -1246,9 +1257,8 @@ const App = () => {
                             {['本期已完工', '前期已完工', '本期待追蹤', '前期待追蹤'].map(f => (
                               <button key={f} onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === f ? '' : f}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>{String(f)}</button>
                             ))}
-                            {/* 第三列：約內已完工 與 內控管理 並列 */}
                             <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:border-indigo-300'}`}>約內已完工</button>
-                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
+                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-indigo-300'}`}>內控管理</button>
                           </div>
                         </div>
                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-500 font-bold leading-relaxed text-center">過濾結果：共 {dashboardResults.length} 筆案件</p></div>

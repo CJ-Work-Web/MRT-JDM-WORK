@@ -48,11 +48,11 @@ import {
  * 使用系統環境提供的變數注入配置資訊，不再硬編碼 API Key 等敏感資訊。
  * * 注意：這一行就是您要找的設定！
  */
-const firebaseConfig = JSON.parse(__firebase_config);
+const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'mrt-jdm-repair';
+const appId = import.meta.env.VITE_APP_ID;
 
 // --- 全域常量與輔助函式定義 ---
 

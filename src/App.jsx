@@ -43,23 +43,16 @@ import {
   Edit3
 } from 'lucide-react';
 
-// Firebase 配置 - 使用 mrt-jdm 專案
-const firebaseConfig = {
-  apiKey: "AIzaSyDMXw0TD9We1y9ZljBAX9yYb1cpuWzG2wo",
-  authDomain: "mrt-jdm.firebaseapp.com",
-  projectId: "mrt-jdm",
-  storageBucket: "mrt-jdm.firebasestorage.app",
-  messagingSenderId: "608524523964",
-  appId: "1:608524523964:web:273e7a49e1990f6a3773b9",
-  measurementId: "G-YLS8YX7M16"
-};
-
+/**
+ * 安全配置加固：
+ * 使用系統環境提供的變數注入配置資訊，不再硬編碼 API Key 等敏感資訊。
+ * * 注意：這一行就是您要找的設定！
+ */
+const firebaseConfig = JSON.parse(__firebase_config);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// 固定 appId，確保資料路徑永久一致
-const appId = 'mrt-jdm-repair';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'mrt-jdm-repair';
 
 // --- 全域常量與輔助函式定義 ---
 
@@ -86,8 +79,6 @@ function getInitialFormState() {
 const EDITABLE_INPUT_STYLE = "border-slate-300 bg-white hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm outline-none font-bold text-sm px-4 py-2.5";
 const HIGHLIGHT_INPUT_STYLE = "bg-amber-50 border-amber-400 text-amber-900 shadow-inner focus:ring-2 focus:ring-amber-200 transition-all outline-none font-black text-sm px-4 py-2.5";
 const READONLY_INPUT_STYLE = "border border-slate-200 bg-slate-100 text-slate-700 font-black cursor-default outline-none shadow-inner text-sm px-4 py-2.5";
-
-// 側邊欄專用輸入框樣式：強化格線辨識度
 const SIDEBAR_INPUT_STYLE = "border-slate-400 bg-white hover:border-blue-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm outline-none font-bold text-sm px-4 py-2.5 placeholder:text-slate-400";
 
 const SATISFACTION_LEVELS = [
@@ -526,50 +517,60 @@ const App = () => {
     if (!window.XLSX) return;
     
     if (exportMode === '內控管理') {
-      const rows = dashboardResults.map(item => {
-        const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
-        const costInvoices = (item.costItems || []).map(ci => ci.invoiceNumber).filter(Boolean).join(', ');
-        // 修正：同步調整為統計所有收入
-        const totalCaseIncome = (item.incomeItems || []).reduce((sum, ii) => sum + (Number(ii.incomeAmount) || 0), 0);
-        const incomeInvoices = (item.incomeItems || []).map(ii => ii.receiptNumber).filter(Boolean).join(', ');
-
-        return {
-          "類別": item.repairType === '2.1' ? "契約內" : "契約外",
-          "JDM系統案號": String(item.jdmControl?.caseNumber || ''),
-          "建物門牌地址": String(item.address || ''),
-          "報價單標題": String(item.quoteTitle || ''),
-          "費用合計": totalCost,
-          "費用發票 / 收據號碼": costInvoices,
-          "收入合計": totalCaseIncome,
-          "收入發票號碼": incomeInvoices
-        };
-      });
-
-      // 計算統計資料
       const inCases = dashboardResults.filter(c => c.repairType === '2.1');
       const outCases = dashboardResults.filter(c => c.repairType !== '2.1');
-
       const calcStats = (list) => {
         const c = list.reduce((s, i) => s + (i.costItems || []).reduce((ss, cc) => ss + (Number(cc.costAmount) || 0), 0), 0);
-        // 修正：同步調整為統計所有收入
         const r = list.reduce((s, i) => s + (i.incomeItems || []).reduce((ss, ii) => ss + (Number(ii.incomeAmount) || 0), 0), 0);
         return { c, r, p: r - c };
       };
-
       const inStats = calcStats(inCases);
       const outStats = calcStats(outCases);
+      const statsRows = [ 
+        { label: "契約內費用合計", value: inStats.c }, 
+        { label: "契約內收入合計", value: inStats.r }, 
+        { label: "契約內總計收益", value: inStats.p }, 
+        { label: "", value: "" }, 
+        { label: "契約外費用合計", value: outStats.c }, 
+        { label: "契約外收入合計", value: outStats.r }, 
+        { label: "契約外總計收益", value: outStats.p }, 
+        { label: "", value: "" }, 
+        { label: "全部案件總計收益", value: inStats.p + outStats.p } 
+      ];
 
-      rows.push({}); // 空行
-      rows.push({ "類別": "【統計資料】" });
-      rows.push({ "類別": "“契約內”費用合計", "JDM系統案號": inStats.c });
-      rows.push({ "類別": "“契約內”收入合計", "JDM系統案號": inStats.r });
-      rows.push({ "類別": "“契約內”總計收益", "JDM系統案號": inStats.p });
-      rows.push({ "類別": "“契約外”費用合計", "JDM系統案號": outStats.c });
-      rows.push({ "類別": "“契約外”收入合計", "JDM系統案號": outStats.r });
-      rows.push({ "類別": "“契約外”總計收益", "JDM系統案號": outStats.p });
-      rows.push({ "類別": "全部案件總計收益", "JDM系統案號": inStats.p + outStats.p });
+      const maxLength = Math.max(dashboardResults.length, statsRows.length);
+      const finalRows = [];
 
-      const ws = window.XLSX.utils.json_to_sheet(rows);
+      for (let i = 0; i < maxLength; i++) {
+        const item = dashboardResults[i];
+        const stat = statsRows[i];
+        const row = {};
+        if (item) {
+          const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
+          const costContractors = [...new Set((item.costItems || []).map(ci => ci.contractor).filter(Boolean))].join(', ');
+          const costInvoices = (item.costItems || []).map(ci => ci.invoiceNumber).filter(Boolean).join(', ');
+          const totalCaseIncome = (item.incomeItems || []).reduce((sum, ii) => sum + (Number(ii.incomeAmount) || 0), 0);
+          const incomeSources = [...new Set((item.incomeItems || []).map(ii => ii.source).filter(Boolean))].join(', ');
+          const incomeInvoices = (item.incomeItems || []).map(ii => ii.receiptNumber).filter(Boolean).join(', ');
+          
+          row["契約內/外類別"] = item.repairType === '2.1' ? "契約內" : "契約外";
+          row["JDM系統案號"] = String(item.jdmControl?.caseNumber || '');
+          row["建物門牌地址"] = String(item.address || '');
+          row["報價單標題"] = String(item.quoteTitle || '');
+          row["費用合計"] = totalCost;
+          row["維修廠商"] = costContractors;
+          row["發票 / 收據號碼"] = costInvoices;
+          row["收入合計"] = totalCaseIncome;
+          row["請款廠商"] = incomeSources;
+          row["發票號碼"] = incomeInvoices;
+        } else {
+          ["契約內/外類別", "JDM系統案號", "建物門牌地址", "報價單標題", "費用合計", "維修廠商", "發票 / 收據號碼", "收入合計", "請款廠商", "發票號碼"].forEach(k => row[k] = "");
+        }
+        row[" "] = ""; row["統計項目"] = stat ? stat.label : ""; row["統計數值"] = stat ? stat.value : "";
+        finalRows.push(row);
+      }
+      const ws = window.XLSX.utils.json_to_sheet(finalRows);
+      ws["!views"] = [{ state: "frozen", ySplit: 1 }];
       const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "內控管理");
       window.XLSX.writeFile(wb, `內控管理_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -660,6 +661,9 @@ const App = () => {
                 });
              }
              setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
+          } else {
+             setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
+             showMessage("已完成匯入 (未登入，僅限本次作業)", 'success');
           }
         } else {
           const parsedB = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }).slice(4).map(r => ({ 
@@ -675,9 +679,13 @@ const App = () => {
               updatedAt: serverTimestamp()
             });
             setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
+          } else {
+            setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
+            showMessage("已完成匯入 (未登入，僅限本次作業)", 'success');
           }
         }
       } catch (err) { 
+        console.error(err);
         if (type === 'A') setImportStatus(prev => ({ ...prev, isProcessingA: false }));
         else setImportStatus(prev => ({ ...prev, isProcessingB: false }));
         showMessage("檔案讀取或儲存錯誤", "error"); 
@@ -689,12 +697,14 @@ const App = () => {
   const handleSaveToCloud = async () => {
     if (!user) return;
     
+    // 邏輯：抽換/退件狀態下，備註為必填
     const needsRemarks = (['抽換', '退件'].includes(formData.jdmControl.status));
     if (needsRemarks && !formData.jdmControl.remarks.trim()) {
       showMessage("狀態為抽換或退件時，必須填寫案件備註", "error");
       return;
     }
 
+    // 邏輯：提報/結報狀態下，案號為必填
     const needsCaseNumber = (['提報', '結報'].includes(formData.jdmControl.status));
     if (needsCaseNumber && !formData.jdmControl.caseNumber.trim()) {
       showMessage("狀態為提報或結報時，JDM 系統案號必填", "error");
@@ -1187,6 +1197,7 @@ const App = () => {
               </div>
             </div>
 
+            {/* 5. JDM 報修進度 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
               <div className="flex items-center justify-between border-b pb-3 shrink-0 overflow-hidden"><h2 className="text-base font-black text-slate-900 uppercase tracking-widest whitespace-nowrap shrink-0 flex items-center gap-3">5. JDM 報修進度</h2></div>
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1207,15 +1218,19 @@ const App = () => {
           </>
         ) : (
           <div className="space-y-6 animate-in fade-in duration-500">
+            {/* 案件管理中心篩選器 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col gap-5">
               <div className="flex flex-col xl:flex-row gap-4 items-stretch xl:items-center">
                 <div className="flex-1 relative min-w-0"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" placeholder="搜尋門牌、承租人、案號、項目或標題..." className={`w-full pl-12 pr-6 py-3.5 rounded-2xl border font-bold text-sm ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.search} onChange={(e) => setDashboardFilter({...dashboardFilter, search: e.target.value})} /></div>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
+                  {/* 站點篩選 */}
                   <div className="relative shrink-0" ref={stationDropdownRef}>
                     <button onClick={() => setIsStationDropdownOpen(!isStationDropdownOpen)} className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-black text-sm border bg-white min-w-[140px] sm:min-w-[160px] transition-all hover:border-blue-400 shadow-sm ${dashboardFilter.stations.length > 0 ? 'border-blue-500 text-blue-600 bg-blue-50/30' : 'border-slate-300 text-slate-700'}`}><Building2 size={16} className="shrink-0" /><span className="flex-1 text-left whitespace-nowrap truncate">{dashboardFilter.stations.length === 0 ? '所有站點' : dashboardFilter.stations.length === 1 ? `${String(dashboardFilter.stations[0])}` : `已選 ${dashboardFilter.stations.length}`}</span><ChevronDown size={14} className={`transition-transform duration-200 shrink-0 ${isStationDropdownOpen ? 'rotate-180' : ''}`} /></button>
                     {isStationDropdownOpen && (<div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-[20px] shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100 p-3"><div className="flex items-center justify-between p-2 border-b mb-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">站點篩選</span><div className="flex gap-3"><button onClick={() => setDashboardFilter({...dashboardFilter, stations: availableStations})} className="text-xs font-black text-blue-600 hover:underline whitespace-nowrap">全選</button><button onClick={() => setDashboardFilter({...dashboardFilter, stations: []})} className="text-xs font-black text-slate-500 hover:underline whitespace-nowrap">清除</button></div></div><div className="max-h-80 overflow-y-auto space-y-1 custom-scrollbar">{availableStations.map(st => { const isChecked = dashboardFilter.stations.includes(st); return (<button key={st} onClick={() => { const s = dashboardFilter.stations.includes(st) ? dashboardFilter.stations.filter(x=>x!==st) : [...dashboardFilter.stations, st]; setDashboardFilter({...dashboardFilter, stations: s}); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${isChecked ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}><div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>{isChecked && <Check size={12} className="text-white" strokeWidth={4} />}</div><span className="truncate text-left flex-1 text-xs">{String(st)}</span></button>); })}</div></div>)}
                   </div>
+                  {/* 狀態篩選 */}
                   <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[160px] sm:min-w-[200px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}><option>全部</option><option>未完成案件 (全部)</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
+                  {/* 特殊搜尋 */}
                   <div className="relative shrink-0" ref={specialSearchRef}>
                     <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>
                     {isSpecialSearchOpen && (
@@ -1240,10 +1255,12 @@ const App = () => {
                       </div>
                     )}
                   </div>
+                  {/* 匯出功能 */}
                   <div className="flex items-center xl:ml-auto shrink-0 group"><div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button></div>
                 </div>
               </div>
             </div>
+            {/* 案件列表 */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden min-h-[450px] flex flex-col">
               {!isDashboardSearchActive ? (<div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>) : (
                 <div className="overflow-x-auto"><table className="w-full text-left border-collapse table-fixed min-w-[1400px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-36 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">進度狀態</th><th className="w-32 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-48 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-80 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-64 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-32 p-4 text-xs font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-32 p-4 text-xs font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table><div className="bg-slate-50 p-4 text-xs font-black text-slate-500 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>

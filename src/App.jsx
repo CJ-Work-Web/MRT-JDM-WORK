@@ -123,7 +123,7 @@ function getInitialFormState() {
     phone: '', 
     repairType: '2.1', 
     reportDate: '', 
-    isSubLease: false, // 新增：包租契約標記
+    isSubLease: false, 
     repairItems: [],
     costItems: [{ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }],
     incomeItems: [{ id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }],
@@ -386,10 +386,10 @@ const App = () => {
     const errors = [];
     const sequence = [
       { key: 'reportDate', label: '提報日' },
-      { key: 'reportSubmitDate', label: '送件日' }, // 更名
+      { key: 'reportSubmitDate', label: '送件日' }, 
       { key: 'approvalDate', label: '奉核日' },
       { key: 'closeDate', label: '結報日' },
-      { key: 'closeSubmitDate', label: '送件日' } // 更名
+      { key: 'closeSubmitDate', label: '送件日' } 
     ];
 
     for (let i = 0; i < sequence.length; i++) {
@@ -425,7 +425,7 @@ const App = () => {
     }
     if (formData.repairType === '2.1') {
       if (reportSubmitDate && closeSubmitDate && reportSubmitDate !== closeSubmitDate) {
-        errors.push("契約內案件：提報送件日與結報送件日須為同一天");
+        errors.push("契約內案件：送件日須為同一天");
       }
     }
 
@@ -490,7 +490,6 @@ const App = () => {
       return addr.includes(debouncedSearchAddress) || name.includes(debouncedSearchAddress);
     });
 
-    // 1. 地址升冪排序
     return filtered.sort((a, b) => {
       const addrA = String(a['建物門牌'] || a['門牌'] || '');
       const addrB = String(b['建物門牌'] || b['門牌'] || '');
@@ -622,8 +621,8 @@ const App = () => {
 
       for (let i = 0; i < maxLength; i++) {
         const item = dashboardResults[i];
-        const stat = statsRows[i];
         const row = {};
+        const stat = statsRows[i];
         if (item) {
           const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
           const costContractors = [...new Set((item.costItems || []).map(ci => ci.contractor).filter(Boolean))].join(', ');
@@ -649,7 +648,6 @@ const App = () => {
         finalRows.push(row);
       }
       const ws = window.XLSX.utils.json_to_sheet(finalRows);
-      ws["!views"] = [{ state: "frozen", ySplit: 1 }];
       const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "內控管理");
       window.XLSX.writeFile(wb, `內控管理_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -664,7 +662,7 @@ const App = () => {
       if (exportMode === '待追蹤事項') {
         return { "項次": index + 1, "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "報修日期": fmtDate(item.jdmControl?.reportDate), "故障問題描述": combinedDesc, "處理進度": "", "完工日": "" };
       } else if (exportMode === '工作提報單') {
-        return { "契約狀態": item.repairType === '2.1' ? "契約內" : "契約外", "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "故障問題描述": combinedDesc, "報修日期": fmtDate(item.jdmControl?.reportDate), "完工日期": fmtDate(item.jdmControl?.closeDate), "結報送件日期": fmtDate(item.jdmControl?.closeSubmitDate) };
+        return { "契約狀態": item.repairType === '2.1' ? "契約內" : "契約外", "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "故障問題描述": combinedDesc, "報修日期": fmtDate(item.jdmControl?.reportDate), "完工日期": fmtDate(item.jdmControl?.closeDate), "送件日期": fmtDate(item.jdmControl?.closeSubmitDate) };
       } else if (exportMode === '滿意度調查') {
         return {
           "JDM系統案號": String(item.jdmControl?.caseNumber || ''),
@@ -673,7 +671,7 @@ const App = () => {
           "施工說明": combinedDesc, 
           "JDM提報日期": fmtDate(item.jdmControl?.reportDate),
           "JDM結報日期": fmtDate(item.jdmControl?.closeDate),
-          "JDM結報送件日期": fmtDate(item.jdmControl?.closeSubmitDate),
+          "JDM送件日期": fmtDate(item.jdmControl?.closeSubmitDate),
           "滿意度分級": String(item.satisfactionLevel || '--'),
           "滿意度分數": item.satisfactionLevel === '不需滿意度' ? "" : item.satisfactionScore, 
           "類別": item.repairType === '2.1' ? "契約內" : "契約外"
@@ -761,32 +759,75 @@ const App = () => {
             showMessage("已完成匯入 (僅限本次作業)", 'success');
           }
         } else if (type === 'C') {
+          // [歷史案件匯入修復與優化版]
           const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
           
+          // 標準化日期解析引擎：處理西元、民國、序號與補零
           const cleanDateAndExtractNote = (val) => {
             if (!val) return { date: '', note: '' };
-            const s = String(val).trim();
-            const dateMatch = s.match(/(\d{4}[-/]\d{1,2}[-/]\d{1,2})/);
+            let s = String(val).trim();
+            
+            // 1. 處理 Excel 序號 (純數字)
+            if (/^\d{5}(\.\d+)?$/.test(s)) {
+              try {
+                const dateObj = window.XLSX.SSF.parse_date_code(Number(s));
+                const y = String(dateObj.y).padStart(4, '0');
+                const m = String(dateObj.m).padStart(2, '0');
+                const d = String(dateObj.d).padStart(2, '0');
+                return { date: `${y}-${m}-${d}`, note: '' };
+              } catch (e) { return { date: '', note: s }; }
+            }
+
+            // 2. 匹配日期組件 (支援點、橫線、斜線)
+            const dateMatch = s.match(/(\d{2,4})[-/.](\d{1,2})[-/.](\d{1,2})/);
             if (dateMatch) {
-              const date = dateMatch[1].replace(/\//g, '-');
+              let y = parseInt(dateMatch[1]);
+              const m = dateMatch[2].padStart(2, '0');
+              const d = dateMatch[3].padStart(2, '0');
+              
+              // 智慧年份判斷
+              if (String(dateMatch[1]).length === 3 || y < 111) { // 假設 111 以下為民國年
+                y += 1911;
+              } else if (String(dateMatch[1]).length === 2) { // 2 位數西元 (如 22)
+                y += 2000;
+              }
+
+              const dateStr = `${String(y).padStart(4, '0')}-${m}-${d}`;
               const note = s.replace(dateMatch[0], '').trim();
-              return { date, note };
+              return { date: dateStr, note };
             }
             return { date: '', note: s };
           };
 
           const casesToUpload = rows.map(r => {
-            const caseNoteList = [];
-            
-            const dateFields = ['JDM提報日期', '提報送件日期', '奉核日', '結報日期', '結報送件日期', '收入發票日期'];
-            const cleanedDates = {};
-            dateFields.forEach(f => {
-              const { date, note } = cleanDateAndExtractNote(r[f]);
-              cleanedDates[f] = date;
-              if (note) caseNoteList.push(`${f}: ${note}`);
+            // 標題清洗：強力移除所有換行符與空白字元
+            const sr = {};
+            Object.keys(r).forEach(k => {
+              const cleanKey = String(k).replace(/[\n\r\s\u00A0\u3000]+/g, '');
+              sr[cleanKey] = r[k];
             });
 
-            let billingVendor = String(r['請款廠商'] || '').trim();
+            const caseNoteList = [];
+            const dateFields = [
+              { key: 'JDM提報日期', label: '提報日' },
+              { key: '提報送件日期', label: '送件' },
+              { key: '奉核日', label: '奉核' },
+              { key: '結報日期', label: '結報日' },
+              { key: '結報送件日期', label: '送件' },
+              { key: '收入發票日期', label: '發票日' }
+            ];
+            
+            const cleanedDates = {};
+            dateFields.forEach(df => {
+              // fallback: 嘗試尋找不含 "JDM" 前綴的欄位
+              const val = sr[df.key] || sr[df.key.replace('JDM', '')];
+              const { date, note } = cleanDateAndExtractNote(val);
+              cleanedDates[df.key] = date;
+              if (note) caseNoteList.push(`${df.label}: ${note}`);
+            });
+
+            // 廠商與金額邏輯
+            let billingVendor = String(sr['請款廠商'] || '').trim();
             let incomeVoucher = '';
             if (billingVendor.includes('晟晁')) {
               const numMatch = billingVendor.match(/\d+/);
@@ -796,13 +837,13 @@ const App = () => {
               }
             }
 
-            let rawCostVendor = String(r['維修廠商'] || '').trim();
-            let costAmountVal = Number(r['費用金額']) || 0;
-            const incomeAmountVal = Number(r['收入金額(稅後)']) || 0;
+            let rawCostVendor = String(sr['維修廠商'] || '').trim();
+            const incomeAmountInclusive = Number(sr['收入金額(稅後)']) || 0;
+            let costAmountInclusive = Number(sr['費用金額']) || 0;
 
             if (!billingVendor.includes('晟晁') && !rawCostVendor && billingVendor !== '') {
               rawCostVendor = billingVendor;
-              costAmountVal = incomeAmountVal;
+              costAmountInclusive = incomeAmountInclusive;
             }
 
             let costVendorClean = rawCostVendor;
@@ -813,60 +854,68 @@ const App = () => {
               costVendorClean = rawCostVendor.replace(costNumMatch[0], '').trim();
             }
 
+            // 反推未稅價
+            const preTaxPrice = Math.round(incomeAmountInclusive / 1.05);
+
+            // 滿意度
             const satisfactionOptions = ['非常滿意', '滿意', '尚可', '需改進', '不滿意'];
             let sLevel = '';
             let sScore = null;
             satisfactionOptions.forEach(l => {
-              if (r[l] !== undefined && r[l] !== null && r[l] !== '') {
+              if (sr[l] !== undefined && sr[l] !== null && sr[l] !== '') {
                 sLevel = l === '尚可' ? '普通' : l === '需改進' ? '尚須改進' : l;
-                sScore = Number(r[l]);
+                sScore = Number(sr[l]);
               }
             });
 
+            const reportDateVal = cleanedDates['JDM提報日期'];
+
             return {
-              station: String(r['站點'] || '').trim(),
-              address: String(r['建物門牌地址'] || '').trim(),
-              tenant: String(r['承租人'] || '').trim(),
-              phone: String(r['聯絡電話'] || '').trim(),
-              repairType: String(r['契約內/外'] || '').includes('外') ? '2.2' : '2.1',
-              quoteTitle: String(r['報價單標題'] || '').trim(),
-              siteDescription: String(r['現場狀況'] || '').trim(),
-              totalAmount: incomeAmountVal,
+              station: String(sr['站點'] || '').trim(),
+              address: String(sr['建物門牌地址'] || '').trim(),
+              tenant: String(sr['承租人'] || '').trim(),
+              phone: String(sr['聯絡電話'] || '').trim(),
+              repairType: String(sr['契約內/外'] || '').includes('外') ? '2.2' : '2.1',
+              quoteTitle: String(sr['報價單標題'] || '').trim(),
+              siteDescription: String(sr['現場狀況'] || '').trim(),
+              totalAmount: incomeAmountInclusive,
+              reportDate: reportDateVal, // 寫入根層級 reportDate
               satisfactionLevel: sLevel,
               satisfactionScore: sScore,
+              isSubLease: ['備註', '欄1', '欄2'].some(k => String(sr[k] || '').includes('包租')),
               jdmControl: {
-                caseNumber: String(r['JDM系統案號'] || '').trim(),
-                reportDate: cleanedDates['JDM提報日期'],
+                caseNumber: String(sr['JDM系統案號'] || '').trim(),
+                reportDate: reportDateVal, // 寫入進度物件內的 reportDate
                 reportSubmitDate: cleanedDates['提報送件日期'],
                 approvalDate: cleanedDates['奉核日'],
                 closeDate: cleanedDates['結報日期'],
                 closeSubmitDate: cleanedDates['結報送件日期'],
-                status: cleanedDates['結報日期'] ? '結報' : cleanedDates['JDM提報日期'] ? '提報' : '',
+                status: cleanedDates['結報日期'] ? '結報' : reportDateVal ? '提報' : '',
                 remarks: caseNoteList.join('; '),
                 checklist: []
               },
               costItems: [{
                 id: generateUUID(),
                 contractor: costVendorClean,
-                costAmount: costAmountVal,
+                costAmount: costAmountInclusive,
                 voucherNumber: costVoucher,
-                remarks: String(r['費用備註'] || '').trim(),
+                remarks: String(sr['費用備註'] || '').trim(),
                 billingDate: '',
-                workTask: String(r['報價單標題'] || '').trim(),
+                workTask: String(sr['報價單標題'] || '').trim(),
                 invoiceNumber: ''
               }],
               incomeItems: [{
                 id: generateUUID(),
                 source: billingVendor,
-                incomeAmount: incomeAmountVal,
+                incomeAmount: incomeAmountInclusive,
                 incomeVoucherNumber: incomeVoucher,
                 receiveDate: cleanedDates['收入發票日期'] || '',
-                receiptNumber: String(r['收入發票號碼'] || '').trim()
+                receiptNumber: String(sr['收入發票號碼'] || '').trim()
               }],
               repairItems: [{
                 uid: generateUUID(),
-                name: String(r['報價單標題'] || '').trim(),
-                price: incomeAmountVal,
+                name: String(sr['報價單標題'] || '').trim(),
+                price: preTaxPrice,
                 quantity: 1,
                 unit: '式',
                 isManual: true
@@ -882,16 +931,16 @@ const App = () => {
             );
             await Promise.all(uploadPromises);
             setImportStatus(prev => ({ ...prev, isProcessingC: false }));
-            showMessage(`成功匯入 ${casesToUpload.length} 筆歷史案件`, 'success');
+            showMessage(`成功匯入 ${casesToUpload.length} 筆歷史案件 (日期清洗已修正)`, 'success');
           } else {
             setImportStatus(prev => ({ ...prev, isProcessingC: false }));
-            showMessage("未登入雲端，無法執行匯入", "error");
+            showMessage("未登入，無法執行匯入", "error");
           }
         }
       } catch (err) { 
         console.error(err);
         setImportStatus(prev => ({ ...prev, isProcessingA: false, isProcessingB: false, isProcessingC: false }));
-        showMessage("檔案解析或寫入失敗", "error"); 
+        showMessage("檔案處理失敗", "error"); 
       }
     };
     reader.readAsBinaryString(file); e.target.value = '';
@@ -922,6 +971,7 @@ const App = () => {
   const handleEditCaseInternal = useCallback((item) => {
     const sanitizedCase = { 
       ...item, 
+      satisfactionScore: item.satisfactionScore !== null ? Number(item.satisfactionScore) : null,
       jdmControl: { ...item.jdmControl, checklist: Array.isArray(item.jdmControl?.checklist) ? item.jdmControl.checklist : [] },
       costItems: (item.costItems || []).map(ci => ({ ...ci, voucherNumber: ci.voucherNumber || '', remarks: ci.remarks || '' })),
       incomeItems: (item.incomeItems || []).map(ii => ({ ...ii, incomeVoucherNumber: ii.incomeVoucherNumber || '', remarks: ii.remarks || '' }))
@@ -1117,7 +1167,7 @@ const App = () => {
                       <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">請款內容</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">請款內容</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, workTask: n}); }} /></div>
                       <div className="space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票 / 收據號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.invoiceNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].invoiceNumber = e.target.value; setFormData({...formData, invoiceNumber: n}); }} /></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1151,7 +1201,7 @@ const App = () => {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">契約類型</label><div className={`w-full border border-slate-200 bg-slate-50 text-slate-700 font-bold px-3 py-2 text-sm rounded-xl`}>{formData.repairType === '2.1' ? "契約內" : "契約外"}</div></div>
-                      <div className="md:col-span-1 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiptNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiptNumber = e.target.value; setFormData({...formData, receiptNumber: n}); }} /></div>
+                      <div className="md:col-span-1 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiptNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiptNumber = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">收入單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.incomeVoucherNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].incomeVoucherNumber = e.target.value; setFormData({...formData, incomeVoucherNumber: n}); }} /></div>
@@ -1382,9 +1432,13 @@ const App = () => {
                   <div className="pt-4 border-t-2 border-slate-50">
                     <div className="flex items-center justify-between mb-4">
                       <label className="text-xs font-black text-slate-600 uppercase tracking-widest whitespace-nowrap shrink-0">客戶滿意度調查</label>
-                      {formData.satisfactionScore !== null && (<div className="px-3 py-1 bg-slate-900 text-white rounded-xl text-xs font-black animate-in fade-in zoom-in-95 whitespace-nowrap">得分：{formData.satisfactionScore} 分</div>)}
+                      {formData.satisfactionScore !== null && (
+                        <div className="px-3 py-1 bg-slate-900 text-white rounded-xl text-xs font-black animate-in fade-in zoom-in-95 whitespace-nowrap">
+                          得分：{formData.satisfactionScore} 分
+                        </div>
+                      )}
                     </div>
-                    <div className="grid grid-cols-3 gap-3">{SATISFACTION_LEVELS.map((level) => { const isSelected = formData.satisfactionLevel === level.label; return (<label key={level.label} onClick={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, satisfactionLevel: isSelected ? '' : level.label, satisfactionScore: isSelected ? null : level.score })); }} className={`relative cursor-pointer transition-all p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 h-20 ${isSelected ? `${level.borderColor} ${level.bgColor} ring-2 ring-offset-1` : 'border-slate-100 bg-white hover:border-slate-200 shadow-sm'}`}><input type="radio" className="sr-only" checked={isSelected} readOnly /><div className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${isSelected ? `${level.color} border-white scale-125 shadow-sm` : 'border-slate-300'}`}></div><div className={`text-[11px] font-black text-center leading-tight ${isSelected ? level.textColor : 'text-slate-500'}`}>{String(level.label)}</div></label>); })}</div>
+                    <div className="grid grid-cols-3 gap-3">{SATISFACTION_LEVELS.map((level) => { const isSelected = formData.satisfactionLevel === level.label; return (<label key={level.label} onClick={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, satisfactionLevel: isSelected ? '' : level.label, satisfactionScore: isSelected ? null : level.score })); }} className={`relative cursor-pointer transition-all p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 h-20 ${isSelected ? `${level.borderColor} ${level.bgColor} ring-2 ring-offset-1` : 'border-slate-100 bg-white hover:border-slate-200 shadow-sm'}`}><input type="radio" className="sr-only" checked={isSelected} readOnly /><div className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${isSelected ? `${level.color} border-white scale-125 shadow-sm` : 'border-slate-300'}`}></div><div className={`text-[11px] font-black text-center leadership-tight ${isSelected ? level.textColor : 'text-slate-500'}`}>{String(level.label)}</div></label>); })}</div>
                   </div>
                 </div>
               </div>
@@ -1438,7 +1492,7 @@ const App = () => {
                             <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
                           </div>
                         </div>
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-500 font-bold leading-relaxed text-center">過濾結果：共 {dashboardResults.length} 筆案件</p></div>
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-500 font-bold text-center leading-relaxed">過濾結果：共 {dashboardResults.length} 筆案件</p></div>
                       </div>
                     )}
                   </div>

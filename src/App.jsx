@@ -56,11 +56,38 @@ const generateUUID = () => {
 };
 
 /**
+ * 環境變數讀取 (相容 Google 開發環境與 Vercel 生產環境)
+ */
+const getSafeEnv = () => {
+  let env = {};
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      env = import.meta.env;
+    }
+  } catch (e) {}
+  if (!env.VITE_FIREBASE_CONFIG && typeof process !== 'undefined' && process.env) {
+    env = { ...env, ...process.env };
+  }
+  return env;
+};
+
+/**
  * Firebase 初始化與 App ID
  */
 const getFirebaseConfig = () => {
+  // 1. 優先嘗試讀取 Google 開發環境注入的配置
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
+  }
+  // 2. 次之讀取 Vercel 或本地環境變數
+  const env = getSafeEnv();
+  const configStr = env.VITE_FIREBASE_CONFIG;
+  if (configStr) {
+    try {
+      return JSON.parse(configStr);
+    } catch (e) {
+      console.error("Firebase config 解析失敗:", e);
+    }
   }
   return {};
 };
@@ -692,7 +719,6 @@ const App = () => {
           setSheetNames(wb.SheetNames);
           
           if (user && db) {
-             // 修正：調整分塊大小為 500 以提升處理速度
              const chunks = chunkArray(all, 500);
              
              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'address_master'), {
@@ -1031,7 +1057,7 @@ const App = () => {
                       <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">請款內容</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, workTask: n}); }} /></div>
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">請款內容</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
                       <div className="space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票 / 收據號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.invoiceNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].invoiceNumber = e.target.value; setFormData({...formData, invoiceNumber: n}); }} /></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1244,7 +1270,7 @@ const App = () => {
                   <h2 className="text-base font-black text-blue-800 uppercase tracking-widest whitespace-nowrap shrink-0">2. 修繕項目與費用</h2>
                   {fileBData.length === 0 && !importStatus.isProcessingB && formData.repairType === '2.1' && (
                     <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-lg border border-amber-200 text-xs font-bold animate-pulse">
-                      <Info size={14} /> 尚未同步雲端價目表
+                      <Info size={14} /> 偵測到環境 ID 已更換，請點擊右上角重新執行「匯入」以同步價目表
                     </div>
                   )}
                 </div>

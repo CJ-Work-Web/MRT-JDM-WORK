@@ -41,7 +41,8 @@ import {
   ChevronDown,
   Settings2,
   Edit3,
-  Info
+  Info,
+  History
 } from 'lucide-react';
 
 // --- 全域輔助：UUID 生成器 ---
@@ -75,11 +76,9 @@ const getSafeEnv = () => {
  * Firebase 初始化與 App ID
  */
 const getFirebaseConfig = () => {
-  // 1. 優先嘗試讀取 Google 開發環境注入的配置
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
   }
-  // 2. 次之讀取 Vercel 或本地環境變數
   const env = getSafeEnv();
   const configStr = env.VITE_FIREBASE_CONFIG;
   if (configStr) {
@@ -92,7 +91,6 @@ const getFirebaseConfig = () => {
   return {};
 };
 
-// 保持動態獲取 App ID 以符合環境安全規則，但 UI 不顯示
 const getAppId = () => {
   if (typeof __app_id !== 'undefined' && __app_id) {
     return __app_id;
@@ -125,6 +123,7 @@ function getInitialFormState() {
     phone: '', 
     repairType: '2.1', 
     reportDate: '', 
+    isSubLease: false, // 新增：包租契約標記
     repairItems: [],
     costItems: [{ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }],
     incomeItems: [{ id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }],
@@ -335,6 +334,7 @@ const App = () => {
   const [importStatus, setImportStatus] = useState({
     isProcessingA: false,
     isProcessingB: false,
+    isProcessingC: false,
     fileNameA: '',
     hasImportedB: false
   });
@@ -386,10 +386,10 @@ const App = () => {
     const errors = [];
     const sequence = [
       { key: 'reportDate', label: '提報日' },
-      { key: 'reportSubmitDate', label: '提報送件日' },
+      { key: 'reportSubmitDate', label: '送件日' }, // 更名
       { key: 'approvalDate', label: '奉核日' },
       { key: 'closeDate', label: '結報日' },
-      { key: 'closeSubmitDate', label: '結報送件日' }
+      { key: 'closeSubmitDate', label: '送件日' } // 更名
     ];
 
     for (let i = 0; i < sequence.length; i++) {
@@ -410,17 +410,17 @@ const App = () => {
 
     if (status === '提報') {
       if (!reportDate) errors.push("狀態為提報時，提報日必填");
-      if (!reportSubmitDate) errors.push("狀態為提報時，提報送件日必填");
+      if (!reportSubmitDate) errors.push("狀態為提報時，送件日必填");
       if (closeDate || closeSubmitDate) {
-        errors.push("案件狀態為提報時，不可填寫結報日期與結報送件日");
+        errors.push("案件狀態為提報時，不可填寫結報日期與送件日");
       }
       if (!caseNumber.trim()) errors.push("狀態為提報時，JDM 系統案號必填");
     }
     if (status === '結報') {
       if (!reportDate) errors.push("狀態為結報時，提報日必填");
-      if (!reportSubmitDate) errors.push("狀態為結報時，提報送件日必填");
+      if (!reportSubmitDate) errors.push("狀態為結報時，送件日必填");
       if (!closeDate) errors.push("狀態為結報時，結報日必填");
-      if (!closeSubmitDate) errors.push("狀態為結報時，結報送件日必填");
+      if (!closeSubmitDate) errors.push("狀態為結報時，送件日必填");
       if (!caseNumber.trim()) errors.push("狀態為結報時，JDM 系統案號必填");
     }
     if (formData.repairType === '2.1') {
@@ -484,10 +484,17 @@ const App = () => {
 
   const addressResults = useMemo(() => {
     if (!debouncedSearchAddress || flattenedAddressData.length === 0) return [];
-    return flattenedAddressData.filter(r => {
+    const filtered = flattenedAddressData.filter(r => {
       if (formData.station && r.sourceStation !== formData.station) return false;
       const addr = String(r['建物門牌'] || r['門牌'] || ''), name = String(r['承租人'] || r['姓名'] || '');
       return addr.includes(debouncedSearchAddress) || name.includes(debouncedSearchAddress);
+    });
+
+    // 1. 地址升冪排序
+    return filtered.sort((a, b) => {
+      const addrA = String(a['建物門牌'] || a['門牌'] || '');
+      const addrB = String(b['建物門牌'] || b['門牌'] || '');
+      return addrA.localeCompare(addrB, 'zh-Hant');
     }).slice(0, 50);
   }, [debouncedSearchAddress, flattenedAddressData, formData.station]);
 
@@ -690,12 +697,14 @@ const App = () => {
     const file = e.target.files[0]; if (!file) return;
     
     if (type === 'A') setImportStatus(prev => ({ ...prev, isProcessingA: true }));
-    else setImportStatus(prev => ({ ...prev, isProcessingB: true }));
+    else if (type === 'B') setImportStatus(prev => ({ ...prev, isProcessingB: true }));
+    else setImportStatus(prev => ({ ...prev, isProcessingC: true }));
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
         const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
+        
         if (type === 'A') {
           const all = [];
           wb.SheetNames.forEach(name => {
@@ -704,7 +713,7 @@ const App = () => {
               const hIdx = Math.max(0, rows.findIndex(r => Array.isArray(r) && r.some(c => String(c).match(/門牌|地址/))));
               const headers = rows[hIdx] || [];
               rows.slice(hIdx + 1).forEach((r, ri) => {
-                const obj = { sourceStation: name, _uid: `${name}-${ri}-${crypto.randomUUID()}` };
+                const obj = { sourceStation: name, _uid: `${name}-${ri}-${generateUUID()}` };
                 headers.forEach((h, i) => { 
                   if (h) {
                     const val = r[i];
@@ -720,7 +729,6 @@ const App = () => {
           
           if (user && db) {
              const chunks = chunkArray(all, 500);
-             
              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'address_master'), {
                chunkCount: chunks.length,
                sheets: wb.SheetNames,
@@ -728,20 +736,16 @@ const App = () => {
                totalRecords: all.length,
                originalFileName: file.name
              });
-
              const uploadPromises = chunks.map((chunk, i) => 
-                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', `address_master_chunk_${i}`), {
-                   list: chunk
-                })
+                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', `address_master_chunk_${i}`), { list: chunk })
              );
-             
              await Promise.all(uploadPromises);
              setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
           } else {
              setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
-             showMessage("已完成匯入 (未連線資料庫，僅限本次作業)", 'success');
+             showMessage("已完成匯入 (僅限本次作業)", 'success');
           }
-        } else {
+        } else if (type === 'B') {
           const parsedB = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }).slice(4).map(r => ({ 
             id: String(r[1] || '').trim(), 
             name: String(r[2] || '').trim(), 
@@ -750,21 +754,144 @@ const App = () => {
           })).filter(i => i.name);
           setFileBData(parsedB);
           if (user && db) {
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'price_master'), {
-              list: parsedB,
-              updatedAt: serverTimestamp()
-            });
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'price_master'), { list: parsedB, updatedAt: serverTimestamp() });
             setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
           } else {
             setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
-            showMessage("已完成匯入 (未連線資料庫，僅限本次作業)", 'success');
+            showMessage("已完成匯入 (僅限本次作業)", 'success');
+          }
+        } else if (type === 'C') {
+          const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+          
+          const cleanDateAndExtractNote = (val) => {
+            if (!val) return { date: '', note: '' };
+            const s = String(val).trim();
+            const dateMatch = s.match(/(\d{4}[-/]\d{1,2}[-/]\d{1,2})/);
+            if (dateMatch) {
+              const date = dateMatch[1].replace(/\//g, '-');
+              const note = s.replace(dateMatch[0], '').trim();
+              return { date, note };
+            }
+            return { date: '', note: s };
+          };
+
+          const casesToUpload = rows.map(r => {
+            const caseNoteList = [];
+            
+            const dateFields = ['JDM提報日期', '提報送件日期', '奉核日', '結報日期', '結報送件日期', '收入發票日期'];
+            const cleanedDates = {};
+            dateFields.forEach(f => {
+              const { date, note } = cleanDateAndExtractNote(r[f]);
+              cleanedDates[f] = date;
+              if (note) caseNoteList.push(`${f}: ${note}`);
+            });
+
+            let billingVendor = String(r['請款廠商'] || '').trim();
+            let incomeVoucher = '';
+            if (billingVendor.includes('晟晁')) {
+              const numMatch = billingVendor.match(/\d+/);
+              if (numMatch) {
+                incomeVoucher = numMatch[0];
+                billingVendor = '晟晁';
+              }
+            }
+
+            let rawCostVendor = String(r['維修廠商'] || '').trim();
+            let costAmountVal = Number(r['費用金額']) || 0;
+            const incomeAmountVal = Number(r['收入金額(稅後)']) || 0;
+
+            if (!billingVendor.includes('晟晁') && !rawCostVendor && billingVendor !== '') {
+              rawCostVendor = billingVendor;
+              costAmountVal = incomeAmountVal;
+            }
+
+            let costVendorClean = rawCostVendor;
+            let costVoucher = '';
+            const costNumMatch = rawCostVendor.match(/\d+/);
+            if (costNumMatch) {
+              costVoucher = costNumMatch[0];
+              costVendorClean = rawCostVendor.replace(costNumMatch[0], '').trim();
+            }
+
+            const satisfactionOptions = ['非常滿意', '滿意', '尚可', '需改進', '不滿意'];
+            let sLevel = '';
+            let sScore = null;
+            satisfactionOptions.forEach(l => {
+              if (r[l] !== undefined && r[l] !== null && r[l] !== '') {
+                sLevel = l === '尚可' ? '普通' : l === '需改進' ? '尚須改進' : l;
+                sScore = Number(r[l]);
+              }
+            });
+
+            return {
+              station: String(r['站點'] || '').trim(),
+              address: String(r['建物門牌地址'] || '').trim(),
+              tenant: String(r['承租人'] || '').trim(),
+              phone: String(r['聯絡電話'] || '').trim(),
+              repairType: String(r['契約內/外'] || '').includes('外') ? '2.2' : '2.1',
+              quoteTitle: String(r['報價單標題'] || '').trim(),
+              siteDescription: String(r['現場狀況'] || '').trim(),
+              totalAmount: incomeAmountVal,
+              satisfactionLevel: sLevel,
+              satisfactionScore: sScore,
+              jdmControl: {
+                caseNumber: String(r['JDM系統案號'] || '').trim(),
+                reportDate: cleanedDates['JDM提報日期'],
+                reportSubmitDate: cleanedDates['提報送件日期'],
+                approvalDate: cleanedDates['奉核日'],
+                closeDate: cleanedDates['結報日期'],
+                closeSubmitDate: cleanedDates['結報送件日期'],
+                status: cleanedDates['結報日期'] ? '結報' : cleanedDates['JDM提報日期'] ? '提報' : '',
+                remarks: caseNoteList.join('; '),
+                checklist: []
+              },
+              costItems: [{
+                id: generateUUID(),
+                contractor: costVendorClean,
+                costAmount: costAmountVal,
+                voucherNumber: costVoucher,
+                remarks: String(r['費用備註'] || '').trim(),
+                billingDate: '',
+                workTask: String(r['報價單標題'] || '').trim(),
+                invoiceNumber: ''
+              }],
+              incomeItems: [{
+                id: generateUUID(),
+                source: billingVendor,
+                incomeAmount: incomeAmountVal,
+                incomeVoucherNumber: incomeVoucher,
+                receiveDate: cleanedDates['收入發票日期'] || '',
+                receiptNumber: String(r['收入發票號碼'] || '').trim()
+              }],
+              repairItems: [{
+                uid: generateUUID(),
+                name: String(r['報價單標題'] || '').trim(),
+                price: incomeAmountVal,
+                quantity: 1,
+                unit: '式',
+                isManual: true
+              }],
+              updatedAt: serverTimestamp(),
+              createdBy: user?.uid || 'system'
+            };
+          });
+
+          if (user && db) {
+            const uploadPromises = casesToUpload.map(data => 
+              addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'), data)
+            );
+            await Promise.all(uploadPromises);
+            setImportStatus(prev => ({ ...prev, isProcessingC: false }));
+            showMessage(`成功匯入 ${casesToUpload.length} 筆歷史案件`, 'success');
+          } else {
+            setImportStatus(prev => ({ ...prev, isProcessingC: false }));
+            showMessage("未登入雲端，無法執行匯入", "error");
           }
         }
       } catch (err) { 
         console.error(err);
-        if (type === 'A') setImportStatus(prev => ({ ...prev, isProcessingA: false }));
-        else setImportStatus(prev => ({ ...prev, isProcessingB: false }));
-        showMessage("檔案讀取或儲存錯誤", "error"); 
+        setImportStatus(prev => ({ ...prev, isProcessingA: false, isProcessingB: false, isProcessingC: false }));
+        showMessage("檔案解析或寫入失敗", "error"); 
       }
     };
     reader.readAsBinaryString(file); e.target.value = '';
@@ -772,24 +899,11 @@ const App = () => {
 
   const handleSaveToCloud = async () => {
     if (!user || !db) return;
-    
     const needsRemarks = (['抽換', '退件'].includes(formData.jdmControl.status));
-    if (needsRemarks && !formData.jdmControl.remarks.trim()) {
-      showMessage("狀態為抽換或退件時，必須填寫案件備註", "error");
-      return;
-    }
-
+    if (needsRemarks && !formData.jdmControl.remarks.trim()) { showMessage("狀態為抽換或退件時，必須填寫案件備註", "error"); return; }
     const needsCaseNumber = (['提報', '結報'].includes(formData.jdmControl.status));
-    if (needsCaseNumber && !formData.jdmControl.caseNumber.trim()) {
-      showMessage("狀態為提報或結報時，JDM 系統案號必填", "error");
-      return;
-    }
-
-    if (jdmErrors.length > 0 && !formData.jdmControl.remarks.trim()) { 
-      showMessage("偵測到資料邏輯異常，必須於備註說明原因", "error"); 
-      return; 
-    }
-
+    if (needsCaseNumber && !formData.jdmControl.caseNumber.trim()) { showMessage("狀態為提報或結報時，JDM 系統案號必填", "error"); return; }
+    if (jdmErrors.length > 0 && !formData.jdmControl.remarks.trim()) { showMessage("偵測到資料邏輯異常，必須於備註說明原因", "error"); return; }
     setIsSaving(true);
     try {
       const data = { ...formData, totalAmount: calculationSummary.final, updatedAt: serverTimestamp(), createdBy: user.uid };
@@ -800,7 +914,7 @@ const App = () => {
   };
 
   const toggleManualMode = () => {
-    if (isManualMode) { setFormData(prev => ({ ...prev, station: '', address: '', tenant: '', phone: '' })); setSearchSheet(''); setSearchAddress(''); showMessage("已關閉手動模式並清空欄位", "success"); }
+    if (isManualMode) { setFormData(prev => ({ ...prev, station: '', address: '', tenant: '', phone: '', isSubLease: false })); setSearchSheet(''); setSearchAddress(''); showMessage("已關閉手動模式並清空欄位", "success"); }
     else { showMessage("已切換至手動填寫模式", "success"); }
     setIsManualMode(!isManualMode);
   };
@@ -809,16 +923,8 @@ const App = () => {
     const sanitizedCase = { 
       ...item, 
       jdmControl: { ...item.jdmControl, checklist: Array.isArray(item.jdmControl?.checklist) ? item.jdmControl.checklist : [] },
-      costItems: (item.costItems || []).map(ci => ({ 
-        ...ci, 
-        voucherNumber: ci.voucherNumber || (ci.remarks && !ci.remarks.includes('\n') ? ci.remarks : ''),
-        remarks: ci.remarks && ci.voucherNumber ? ci.remarks : (ci.remarks && ci.remarks.includes('\n') ? ci.remarks : '') 
-      })),
-      incomeItems: (item.incomeItems || []).map(ii => ({
-        ...ii,
-        incomeVoucherNumber: ii.incomeVoucherNumber || '',
-        remarks: ii.remarks || ''
-      }))
+      costItems: (item.costItems || []).map(ci => ({ ...ci, voucherNumber: ci.voucherNumber || '', remarks: ci.remarks || '' })),
+      incomeItems: (item.incomeItems || []).map(ii => ({ ...ii, incomeVoucherNumber: ii.incomeVoucherNumber || '', remarks: ii.remarks || '' }))
     };
     setFormData({ ...getInitialFormState(), ...sanitizedCase });
     setCurrentDocId(item.id); setIsManualMode(false); setActiveView('editor'); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -841,33 +947,21 @@ const App = () => {
     const script = document.createElement('script');
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; script.async = true;
     script.onload = () => setIsXlsxLoaded(true); document.body.appendChild(script);
-
-    if (!firebaseConfig.apiKey) {
-      setConfigError(true);
-      return;
-    }
-
+    if (!firebaseConfig.apiKey) { setConfigError(true); return; }
     const initAuth = async () => { 
       if (!auth) return;
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token); 
-        } else {
-          await signInAnonymously(auth); 
-        }
-      } catch (e) {
-        console.error("Auth 初始失敗:", e);
-        try { await signInAnonymously(auth); } catch (e2) {}
-      }
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { await signInWithCustomToken(auth, __initial_auth_token); } 
+        else { await signInAnonymously(auth); }
+      } catch (e) { console.error("Auth 初始失敗:", e); try { await signInAnonymously(auth); } catch (e2) {} }
     };
     initAuth();
     const unsub = onAuthStateChanged(auth, setUser);
-    return () => { unsub(); if (document.body.contains(script)) document.body.removeChild(script); };
+    return () => { unsub(); };
   }, []);
 
   useEffect(() => {
     if (!user || !db || !auth.currentUser) return;
-    
     const loadMasterData = async () => {
       setImportStatus(prev => ({ ...prev, isProcessingA: true, isProcessingB: true }));
       try {
@@ -878,35 +972,19 @@ const App = () => {
           let combinedList = [];
           if (data.chunkCount && data.chunkCount > 0) {
              const promises = [];
-             for (let i = 0; i < data.chunkCount; i++) {
-               promises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', `address_master_chunk_${i}`)));
-             }
+             for (let i = 0; i < data.chunkCount; i++) { promises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', `address_master_chunk_${i}`))); }
              const chunkDocs = await Promise.all(promises);
              chunkDocs.forEach(c => { if (c.exists()) combinedList = combinedList.concat(c.data().list || []); });
-          } else {
-             combinedList = data.list || [];
-          }
-          setFlattenedAddressData(combinedList);
-          setSheetNames(data.sheets || []);
+          } else { combinedList = data.list || []; }
+          setFlattenedAddressData(combinedList); setSheetNames(data.sheets || []);
           setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: data.originalFileName || '雲端資料庫' }));
-        } else {
-          setImportStatus(prev => ({ ...prev, isProcessingA: false }));
-        }
-        
+        } else { setImportStatus(prev => ({ ...prev, isProcessingA: false })); }
         const pricePath = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'price_master');
         const priceDoc = await getDoc(pricePath);
-        if (priceDoc.exists()) {
-          setFileBData(priceDoc.data().list || []);
-          setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
-        } else {
-          setImportStatus(prev => ({ ...prev, isProcessingB: false }));
-        }
-      } catch (e) {
-        console.error("Master data 讀取失敗:", e);
-        setImportStatus(prev => ({ ...prev, isProcessingA: false, isProcessingB: false }));
-      }
+        if (priceDoc.exists()) { setFileBData(priceDoc.data().list || []); setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true })); } 
+        else { setImportStatus(prev => ({ ...prev, isProcessingB: false })); }
+      } catch (e) { console.error("Master data 讀取失敗:", e); setImportStatus(prev => ({ ...prev, isProcessingA: false, isProcessingB: false })); }
     };
-    
     loadMasterData();
   }, [user, db]);
 
@@ -914,20 +992,11 @@ const App = () => {
     if (!user || !db || !hasActivatedDashboard) return;
     setIsLoadingDashboard(true);
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'));
-    const unsub = onSnapshot(q, (snap) => { 
-      setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() }))); 
-      setIsLoadingDashboard(false); 
-    }, (error) => {
-      console.error("案件監聽異常:", error);
-      setIsLoadingDashboard(false);
-    });
+    const unsub = onSnapshot(q, (snap) => { setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setIsLoadingDashboard(false); }, (error) => { console.error("案件監聽異常:", error); setIsLoadingDashboard(false); });
     return unsub;
   }, [user, db, hasActivatedDashboard]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300);
-    return () => clearTimeout(t);
-  }, [searchAddress]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300); return () => clearTimeout(t); }, [searchAddress]);
 
   useEffect(() => {
     const handleClickOutside = (e) => { 
@@ -943,13 +1012,7 @@ const App = () => {
     setFormData(prev => {
       const items = [...prev.incomeItems];
       if (items.length > 0) {
-        items[0] = { 
-          ...items[0], 
-          subtotal: calculationSummary.subtotal, 
-          serviceFee: calculationSummary.serviceFee, 
-          tax: calculationSummary.tax, 
-          incomeAmount: calculationSummary.final 
-        };
+        items[0] = { ...items[0], subtotal: calculationSummary.subtotal, serviceFee: calculationSummary.serviceFee, tax: calculationSummary.tax, incomeAmount: calculationSummary.final };
         return { ...prev, incomeItems: items };
       }
       return prev;
@@ -957,11 +1020,8 @@ const App = () => {
   }, [calculationSummary, isSyncEnabled]);
 
   useEffect(() => {
-    if (isCostSidebarOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'auto';
-    }
+    if (isCostSidebarOpen) { document.body.style.overflow = 'hidden'; } 
+    else { document.body.style.overflow = 'auto'; }
     return () => { document.body.style.overflow = 'auto'; };
   }, [isCostSidebarOpen]);
 
@@ -1091,7 +1151,7 @@ const App = () => {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">契約類型</label><div className={`w-full border border-slate-200 bg-slate-50 text-slate-700 font-bold px-3 py-2 text-sm rounded-xl`}>{formData.repairType === '2.1' ? "契約內" : "契約外"}</div></div>
-                      <div className="md:col-span-1 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiptNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiptNumber = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
+                      <div className="md:col-span-1 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiptNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiptNumber = e.target.value; setFormData({...formData, receiptNumber: n}); }} /></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">收入單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.incomeVoucherNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].incomeVoucherNumber = e.target.value; setFormData({...formData, incomeVoucherNumber: n}); }} /></div>
@@ -1203,15 +1263,21 @@ const App = () => {
               <div className="flex flex-col lg:flex-row gap-6">
                 <div className="lg:w-1/3 space-y-4">
                   <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2 uppercase whitespace-nowrap shrink-0"><Search size={12} /> 站點搜尋</label><div className="relative"><Search size={14} className="absolute left-3.5 top-3 text-slate-300" /><input type="text" className={`w-full pl-10 ${EDITABLE_INPUT_STYLE}`} value={searchSheet} onChange={(e) => setSearchSheet(e.target.value)} placeholder="站點名稱" />{searchSheet && sheetNames.filter(n => n.includes(searchSheet)).length > 0 && (<div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">{sheetNames.filter(n => n.includes(searchSheet)).map((n, i) => (<div key={i} className="p-3 hover:bg-blue-50 cursor-pointer text-sm font-bold transition-colors border-b last:border-none" onClick={() => { setFormData({...formData, station: n}); setSearchSheet(''); }}>{n}</div>))}</div>)}</div></div>
-                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2 uppercase whitespace-nowrap shrink-0"><User size={12} /> 地址 / 承租人搜尋</label><div className="relative"><Search size={14} className="absolute left-3.5 top-3 text-slate-300" /><input type="text" className={`w-full pl-10 ${EDITABLE_INPUT_STYLE}`} value={searchAddress} onChange={(e) => setSearchAddress(e.target.value)} placeholder="關鍵字搜尋" />{addressResults.length > 0 && (<div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-60 overflow-y-auto custom-scrollbar">{addressResults.map((r) => (<div key={r._uid} className="p-3 hover:bg-indigo-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData({ ...formData, station: r.sourceStation, address: r['建物門牌'] || r['門牌'] || '', tenant: r['承租人'] || r['姓名'] || '', phone: r['連絡電話'] || r['聯絡電話'] || r['電話'] || r['手機'] || '' }); setSearchAddress(''); }}><div className="flex-1 text-base font-bold">{String(r['建物門牌'] || r['門牌'] || '')}</div><MapPin size={14} className="text-slate-300 ml-2 shrink-0" /></div>))}</div>)}</div></div>
-                  <div className="space-y-2"><button onClick={() => { setSearchSheet(''); setSearchAddress(''); setFormData({ ...formData, station: '', address: '', tenant: '', phone: '' }); }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 hover:text-slate-700 transition font-black text-xs uppercase border border-slate-200 whitespace-nowrap shrink-0"><RotateCcw size={12} /> 清除搜尋條件</button><button onClick={toggleManualMode} className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all font-black text-xs uppercase border ${isManualMode ? 'bg-amber-500 text-white border-amber-600 shadow-lg shadow-amber-200' : 'bg-white text-amber-600 border-amber-200 hover:bg-amber-50'} whitespace-nowrap shrink-0`}>{isManualMode ? <CheckCircle size={14} /> : <Edit3 size={14} />}{isManualMode ? '手動模式已開啟' : '手動填寫 (限車位)'}</button></div>
+                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2 uppercase whitespace-nowrap shrink-0"><User size={12} /> 地址 / 承租人搜尋</label><div className="relative"><Search size={14} className="absolute left-3.5 top-3 text-slate-300" /><input type="text" className={`w-full pl-10 ${EDITABLE_INPUT_STYLE}`} value={searchAddress} onChange={(e) => setSearchAddress(e.target.value)} placeholder="關鍵字搜尋" />{addressResults.length > 0 && (<div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-60 overflow-y-auto custom-scrollbar">{addressResults.map((r) => (<div key={r._uid} className="p-3 hover:bg-indigo-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { 
+                    const isSub = ['備註', '欄1', '欄2'].some(key => String(r[key] || '').includes('包租'));
+                    setFormData({ ...formData, station: r.sourceStation, address: r['建物門牌'] || r['門牌'] || '', tenant: r['承租人'] || r['姓名'] || '', phone: r['連絡電話'] || r['聯絡電話'] || r['電話'] || r['手機'] || '', isSubLease: isSub }); 
+                    setSearchAddress(''); 
+                  }}><div className="flex-1 text-base font-bold">{String(r['建物門牌'] || r['門牌'] || '')}</div><MapPin size={14} className="text-slate-300 ml-2 shrink-0" /></div>))}</div>)}</div></div>
+                  <div className="space-y-2"><button onClick={() => { setSearchSheet(''); setSearchAddress(''); setFormData({ ...formData, station: '', address: '', tenant: '', phone: '', isSubLease: false }); }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 hover:text-slate-700 transition font-black text-xs uppercase border border-slate-200 whitespace-nowrap shrink-0"><RotateCcw size={12} /> 清除搜尋條件</button><button onClick={toggleManualMode} className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all font-black text-xs uppercase border ${isManualMode ? 'bg-amber-500 text-white border-amber-600 shadow-lg shadow-amber-200' : 'bg-white text-amber-600 border-amber-200 hover:bg-amber-50'} whitespace-nowrap shrink-0`}>{isManualMode ? <CheckCircle size={14} /> : <Edit3 size={14} />}{isManualMode ? '手動模式已開啟' : '手動填寫 (限車位)'}</button></div>
                 </div>
                 <div className="lg:w-2/3 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <InfoCard icon={Building2} label="目前選定站點" value={formData.station} colorClass="bg-blue-50/50 border-blue-100 text-blue-600" onCopy={copyToClipboard} />
                   <div className="bg-emerald-50/50 border-emerald-100 rounded-2xl border flex flex-col divide-y divide-emerald-100 shadow-sm overflow-hidden">
                     <div className={`p-4 transition-all ${isManualMode ? 'bg-white' : ''}`}>
                       <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs font-black text-slate-500 uppercase tracking-widest block">承租人姓名</label>
+                        <label className="text-xs font-black text-slate-500 uppercase tracking-widest block">
+                          承租人姓名 {formData.isSubLease && <span className="text-rose-600 ml-1 font-black animate-pulse">(包租契約)</span>}
+                        </label>
                         {formData.tenant && (
                           <button type="button" onClick={(e) => copyToClipboard(formData.tenant, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100">
                             <Copy size={10} /> 複製
@@ -1312,7 +1378,7 @@ const App = () => {
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-2 shrink-0"><h2 className="text-base font-black text-emerald-800 uppercase tracking-widest whitespace-nowrap shrink-0">4. 結報</h2><div className="flex items-center gap-2 text-xs font-black text-slate-500 whitespace-nowrap shrink-0">完工日期 <input type="date" className={`px-2 py-1.5 rounded-xl border ${formData.completionDate ? HIGHLIGHT_INPUT_STYLE : EDITABLE_INPUT_STYLE} !text-xs cursor-pointer`} value={formData.completionDate} onChange={(e) => updateFormField('completionDate', e.target.value)} /></div></div>
                 <div className="space-y-4">
                   <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明一</label>{formData.completionDesc1 && (<button onClick={(e) => copyToClipboard(formData.completionDesc1, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div><AutoResizeTextarea value={formData.completionDesc1} onChange={(e) => updateFormField('completionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="修繕最終成果" />
-                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" />{formData.completionDesc2 && (<button onClick={(e) => copyToClipboard(formData.completionDesc2, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明結報所檢附之文件" /></div>
+                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" />{formData.completionDesc2 && (<button onClick={(e) => copyToClipboard(formData.completionDesc2, e)} className="flex items-center gap-3 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明結報所檢附之文件" /></div>
                   <div className="pt-4 border-t-2 border-slate-50">
                     <div className="flex items-center justify-between mb-4">
                       <label className="text-xs font-black text-slate-600 uppercase tracking-widest whitespace-nowrap shrink-0">客戶滿意度調查</label>
@@ -1330,7 +1396,7 @@ const App = () => {
                 <div className="lg:col-span-8 space-y-6">
                   <div className="bg-slate-50/80 p-5 rounded-3xl border border-slate-100 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between mb-4 border-b border-slate-200 pb-2 gap-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">JDM 報修進度</span>{jdmErrors.length > 0 && (<div className="flex items-center gap-2 px-3 py-1 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 animate-in fade-in zoom-in-95 duration-200 max-w-full [word-break:break-word]"><AlertTriangle size={12} className="shrink-0" /><div className="text-[10px] font-black leading-tight">{jdmErrors[0]} {jdmErrors.length > 1 && `(等 ${jdmErrors.length} 項異常)`}</div></div>)}</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{[{l:'提報',f1:'reportDate',f2:'reportSubmitDate',c:'bg-blue-500',tc:'text-blue-600'},{l:'奉核',f1:'approvalDate',c:'bg-purple-500',tc:'text-purple-600'},{l:'結報',f1:'closeDate',f2:'closeSubmitDate',c:'bg-emerald-500',tc:'text-emerald-600'}].map((s,i)=>(<div key={i} className="space-y-3"><div className="flex items-center gap-2 mb-1"><div className={`w-2 h-2 rounded-full ${s.c}`}></div><span className={`text-sm font-black ${s.tc} whitespace-nowrap shrink-0`}>{s.l}階段</span></div><div className="space-y-3"><div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-center justify-between gap-1.5 min-[1400px]:gap-3"><label className="text-xs font-black text-slate-600 shrink-0 min-[1400px]:w-12 whitespace-nowrap">{s.l}日</label><input type="date" className={`px-2 py-1.5 rounded-xl text-xs flex-1 border transition-all cursor-pointer hover:bg-slate-50 active:scale-[0.98] ${getJdmFieldError(s.f1) ? 'ring-2 ring-rose-500/50 border-rose-500 bg-rose-50/30' : EDITABLE_INPUT_STYLE} !px-2`} value={formData.jdmControl[s.f1]} onChange={(e) => updateJdmField(s.f1, e.target.value)} /></div>{s.f2 && (<div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-center justify-between gap-1.5 min-[1400px]:gap-3"><label className="text-xs font-black text-slate-600 shrink-0 min-[1400px]:w-12 whitespace-nowrap">送件</label><input type="date" className={`px-2 py-1.5 rounded-xl text-xs flex-1 border transition-all cursor-pointer hover:bg-slate-50 active:scale-[0.98] ${getJdmFieldError(s.f2) ? 'ring-2 ring-rose-500/50 border-rose-500 bg-rose-50/30' : EDITABLE_INPUT_STYLE} !px-2`} value={formData.jdmControl[s.f2]} onChange={(e) => updateJdmField(s.f2, e.target.value)} /></div>)}</div></div>))}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{[{l:'提報',f1:'reportDate',f2:'reportSubmitDate',c:'bg-blue-500',tc:'text-blue-600'},{l:'奉核',f1:'approvalDate',c:'bg-purple-500',tc:'text-purple-600'},{l:'結報',f1:'closeDate',f2:'closeSubmitDate',c:'bg-emerald-500',tc:'text-emerald-600'}].map((s,i)=>(<div key={i} className="space-y-3"><div className="flex items-center gap-2 mb-1"><div className={`w-2 h-2 rounded-full ${s.c}`}></div><span className={`text-sm font-black ${s.tc} whitespace-nowrap shrink-0`}>{s.l}階段</span></div><div className="space-y-3"><div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-center justify-between gap-1.5 min-[1400px]:gap-3"><label className="text-xs font-black text-slate-600 shrink-0 min-[1400px]:w-12 whitespace-nowrap">{s.l}日</label><input type="date" className={`px-2 py-1.5 rounded-xl text-xs flex-1 border transition-all cursor-pointer hover:bg-slate-50 active:scale-[0.98] ${getJdmFieldError(s.f1) ? 'ring-2 ring-rose-500/50 border-rose-500 bg-rose-50/30' : EDITABLE_INPUT_STYLE} !px-2`} value={formData.jdmControl[s.f1]} onChange={(e) => updateJdmField(s.f1, e.target.value)} /></div>{s.f2 && (<div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-center justify-between gap-1.5 min-[1400px]:gap-3"><label className="text-xs font-black text-slate-600 shrink-0 min-[1400px]:w-12 whitespace-nowrap">送件日</label><input type="date" className={`px-2 py-1.5 rounded-xl text-xs flex-1 border transition-all cursor-pointer hover:bg-slate-50 active:scale-[0.98] ${getJdmFieldError(s.f2) ? 'ring-2 ring-rose-500/50 border-rose-500 bg-rose-50/30' : EDITABLE_INPUT_STYLE} !px-2`} value={formData.jdmControl[s.f2]} onChange={(e) => updateJdmField(s.f2, e.target.value)} /></div>)}</div></div>))}</div>
                   </div>
                   <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-4 gap-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">待補資料</span><div className={`px-3 py-1 rounded-xl text-[10px] font-black whitespace-nowrap shrink-0 ${(formData.jdmControl.checklist || []).length > 0 ? 'bg-orange-50 text-orange-600 animate-pulse border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>待補資料 {(formData.jdmControl.checklist || []).length} 項</div></div><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{JDM_CHECKLIST_ITEMS.map((it) => { const is = (formData.jdmControl.checklist || []).includes(it.id); return (<button key={it.id} onClick={() => toggleJdmCheckItem(it.id)} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${is ? 'bg-orange-50 border-orange-200 text-orange-700 shadow-sm' : 'bg-slate-50/50 border-slate-100 text-slate-500'}`}><div className={`w-4.5 h-4.5 rounded flex items-center justify-center transition-all shrink-0 ${is ? 'bg-orange-500 text-white' : 'bg-white border'}`}>{is && <AlertCircle size={12} />}</div><span className="text-sm font-black whitespace-nowrap truncate">{String(it.label)}</span></button>); })}</div></div>
                 </div>
@@ -1376,7 +1442,15 @@ const App = () => {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center xl:ml-auto shrink-0 group"><div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button></div>
+                  <div className="flex items-center xl:ml-auto shrink-0 group">
+                    <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
+                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}>
+                        {importStatus.isProcessingC ? <Loader2 size={14} className="animate-spin" /> : <History size={14} />} 匯入歷史案件
+                        <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload('C', e)} disabled={importStatus.isProcessingC} />
+                      </label>
+                    </div>
+                    <div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button>
+                  </div>
                 </div>
               </div>
             </div>

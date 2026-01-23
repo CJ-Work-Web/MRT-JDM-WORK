@@ -99,6 +99,7 @@ const getAppId = () => {
 };
 
 const firebaseConfig = getFirebaseConfig();
+// 只有在具備 apiKey 的情況下才初始化，避免 Firebase 丟出致命錯誤
 const app = firebaseConfig && firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
@@ -282,7 +283,8 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
 const App = () => {
   // 1. State Definitions
   const [user, setUser] = useState(null);
-  const [configError, setConfigError] = useState(false); // 偵測配置錯誤
+  const [configError, setConfigError] = useState(false); 
+  const [authError, setAuthError] = useState(null); // 新增：Auth 錯誤捕捉
   const [activeView, setActiveView] = useState('editor'); 
   const [currentDocId, setCurrentDocId] = useState(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false); 
@@ -832,11 +834,17 @@ const App = () => {
         else await signInAnonymously(auth); 
       } catch (e) {
         console.error("Auth init failed:", e);
+        setAuthError(e.code || e.message); // 捕捉錯誤代碼
         try { await signInAnonymously(auth); } catch (e2) {}
       }
     };
     initAuth();
-    const unsub = onAuthStateChanged(auth, setUser);
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) setAuthError(null); // 登入成功後清除錯誤
+    }, (error) => {
+      setAuthError(error.code || error.message);
+    });
     return () => { unsub(); if (document.body.contains(script)) document.body.removeChild(script); };
   }, []);
 
@@ -1032,7 +1040,7 @@ const App = () => {
                   </div>
                 </div>
               ))}
-              <button onClick={() => setFormData({...formData, costItems: [...formData.costItems, { id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }]})} className="group w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-rose-400 hover:text-rose-500 transition-all"><Plus size={20} /> 新增費用項目</button>
+              <button onClick={() => setFormData({...formData, costItems: [...formData.costItems, { id: crypto.randomUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }]})} className="group w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-rose-400 hover:text-rose-500 transition-all"><Plus size={20} /> 新增費用項目</button>
             </div>
           ) : (
             <div className="space-y-4 pb-24">
@@ -1062,7 +1070,7 @@ const App = () => {
                   </div>
                 </div>
               ))}
-              <button onClick={() => setFormData({...formData, incomeItems: [...formData.incomeItems, { id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }]})} className="group w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-emerald-400 hover:text-emerald-500 transition-all"><Plus size={20} /> 新增收入項目</button>
+              <button onClick={() => setFormData({...formData, incomeItems: [...formData.incomeItems, { id: crypto.randomUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }]})} className="group w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-emerald-400 hover:text-emerald-500 transition-all"><Plus size={20} /> 新增收入項目</button>
             </div>
           )}
         </div>
@@ -1118,9 +1126,9 @@ const App = () => {
                 <div>
                   <h1 className="text-xl font-black text-slate-900 tracking-tight">{currentDocId ? '編輯現有案件' : '建立新維修單'}</h1>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`w-2.5 h-2.5 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : configError ? 'bg-rose-500' : 'bg-orange-400 animate-bounce'}`}></span>
-                    <span className={`text-xs font-black uppercase tracking-widest ${configError ? 'text-rose-600 animate-pulse' : 'text-slate-500'}`}>
-                      {configError ? '環境變數缺失，請檢查 Vercel 設定' : !user ? '正在連線中...' : currentDocId ? `案件 ID: ${currentDocId.slice(0,8)}` : '雲端連線成功'}
+                    <span className={`w-2.5 h-2.5 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : configError ? 'bg-rose-500' : authError ? 'bg-red-500' : 'bg-orange-400 animate-bounce'}`}></span>
+                    <span className={`text-xs font-black uppercase tracking-widest ${configError || authError ? 'text-rose-600 animate-pulse' : 'text-slate-500'}`}>
+                      {configError ? '環境變數缺失，請檢查 Vercel 設定' : authError ? `連線錯誤: ${authError}` : !user ? '正在連線中...' : currentDocId ? `案件 ID: ${currentDocId.slice(0,8)}` : '雲端連線成功'}
                     </span>
                   </div>
                 </div>
@@ -1219,7 +1227,7 @@ const App = () => {
               <div className="flex justify-between items-center mb-6 border-b pb-2 shrink-0 overflow-hidden"><h2 className="text-base font-black text-blue-800 uppercase tracking-widest whitespace-nowrap shrink-0">2. 修繕項目與費用</h2><div className="group relative" onMouseEnter={() => formData.repairItems.length > 0 && setFloatingTip({ show: true, text: "已有項目，鎖定編輯" })} onMouseLeave={() => setFloatingTip({ show: false, text: "" })}><select className={`text-xs p-2.5 border rounded-xl font-black whitespace-nowrap transition-all ${formData.repairItems.length > 0 ? 'text-slate-500 bg-slate-50 pointer-events-none cursor-default' : 'text-blue-700 bg-white cursor-pointer shadow-sm hover:border-blue-400'}`} value={formData.repairType} onChange={(e) => updateFormField('repairType', e.target.value)}><option value="2.1">契約內</option><option value="2.2">契約外</option></select></div></div>
               <div className="space-y-4 mb-6">
                 <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">報價單標題</label>{formData.quoteTitle && (<button type="button" onClick={(e) => copyToClipboard(formData.quoteTitle, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap"><Copy size={12} /> 複製</button>)}</div><input type="text" className={`w-full ${EDITABLE_INPUT_STYLE}`} value={formData.quoteTitle} onChange={(e) => updateFormField('quoteTitle', e.target.value)} placeholder="報價標題" /></div>
-                {formData.repairType === '2.1' ? (<div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">搜尋項次或項目</label><div className="relative"><Search size={16} className="absolute left-3.5 top-3.5 text-slate-500" /><input type="text" className={`w-full pl-10 pr-4 py-3 rounded-xl border ${EDITABLE_INPUT_STYLE}`} value={searchB} onChange={(e) => setSearchB(e.target.value)} placeholder="搜尋項次或項目" />{searchB && (<div className="absolute z-10 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-56 overflow-y-auto">{fileBData.filter(b => b.id.toLowerCase().includes(searchB.toLowerCase()) || b.name.includes(searchB)).map((b, i) => (<div key={i} className="p-3 hover:bg-blue-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), ...b, quantity: 1, isManual: false }] })); setSearchB(''); }}><div className="flex flex-col text-sm font-black"><span>{b.id}</span><span>{b.name}</span></div><span className="text-xs font-black text-emerald-600 shrink-0 ml-3">${b.price.toLocaleString()}</span></div>))}</div>)}</div></div>) : (<button onClick={() => setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), id: '', name: '', unit: '', price: '', quantity: 1, isManual: true }] }))} className="w-full py-3 border-2 border-dashed border-blue-400 rounded-2xl font-black text-sm text-blue-600 bg-blue-50/30 flex justify-center items-center gap-2 transition-all hover:bg-blue-50 whitespace-nowrap"><Plus size={16} /> 新增自定義項目</button>)}
+                {formData.repairType === '2.1' ? (<div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">搜尋項次或項目</label><div className="relative"><Search size={16} className="absolute left-3.5 top-3.5 text-slate-500" /><input type="text" className={`w-full pl-10 pr-4 py-3 rounded-xl border ${EDITABLE_INPUT_STYLE}`} value={searchB} onChange={(e) => setSearchB(e.target.value)} placeholder="搜尋項次或項目" />{searchB && (<div className="absolute z-10 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-56 overflow-y-auto">{fileBData.filter(b => b.id.toLowerCase().includes(searchB.toLowerCase()) || b.name.includes(searchB)).map((b, i) => (<div key={i} className="p-3 hover:bg-blue-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: crypto.randomUUID(), ...b, quantity: 1, isManual: false }] })); setSearchB(''); }}><div className="flex flex-col text-sm font-black"><span>{b.id}</span><span>{b.name}</span></div><span className="text-xs font-black text-emerald-600 shrink-0 ml-3">${b.price.toLocaleString()}</span></div>))}</div>)}</div></div>) : (<button onClick={() => setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: crypto.randomUUID(), id: '', name: '', unit: '', price: '', quantity: 1, isManual: true }] }))} className="w-full py-3 border-2 border-dashed border-blue-400 rounded-2xl font-black text-sm text-blue-600 bg-blue-50/30 flex justify-center items-center gap-2 transition-all hover:bg-blue-50 whitespace-nowrap"><Plus size={16} /> 新增自定義項目</button>)}
               </div>
               <div className="overflow-x-auto border rounded-2xl shadow-sm"><table className="w-full text-sm border-collapse table-fixed"><thead className="bg-slate-50 text-xs text-slate-500 font-black uppercase border-b"><tr><th className="p-4 w-28 text-center whitespace-nowrap shrink-0">項次</th><th className="p-4 text-left whitespace-nowrap shrink-0">項目</th><th className="p-4 w-20 text-center whitespace-nowrap shrink-0">單位</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">單價</th><th className="p-4 w-24 text-center whitespace-nowrap shrink-0">數量</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">小計</th><th className="p-4 w-12 whitespace-nowrap shrink-0"></th></tr></thead><tbody className="divide-y divide-slate-100 bg-white">
                 {formData.repairItems.length === 0 ? (<tr><td colSpan="7" className="p-16 text-center text-slate-300 font-black italic uppercase tracking-widest">目前尚未加入修繕內容</td></tr>) : (formData.repairItems.map((item, idx) => (
@@ -1286,15 +1294,17 @@ const App = () => {
           </>
         ) : (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* 案件列表篩選器 */}
+            {/* 案件管理中心篩選器 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col gap-5">
               <div className="flex flex-col xl:flex-row gap-4 items-stretch xl:items-center">
                 <div className="flex-1 relative min-w-0"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" placeholder="搜尋門牌、承租人、案號、項目或標題..." className={`w-full pl-12 pr-6 py-3.5 rounded-2xl border font-bold text-sm ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.search} onChange={(e) => setDashboardFilter({...dashboardFilter, search: e.target.value})} /></div>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
+                  {/* 站點篩選 */}
                   <div className="relative shrink-0" ref={stationDropdownRef}>
                     <button onClick={() => setIsStationDropdownOpen(!isStationDropdownOpen)} className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-black text-sm border bg-white min-w-[140px] sm:min-w-[160px] transition-all hover:border-blue-400 shadow-sm ${dashboardFilter.stations.length > 0 ? 'border-blue-500 text-blue-600 bg-blue-50/30' : 'border-slate-300 text-slate-700'}`}><Building2 size={16} className="shrink-0" /><span className="flex-1 text-left whitespace-nowrap truncate">{dashboardFilter.stations.length === 0 ? '所有站點' : dashboardFilter.stations.length === 1 ? `${String(dashboardFilter.stations[0])}` : `已選 ${dashboardFilter.stations.length}`}</span><ChevronDown size={14} className={`transition-transform duration-200 shrink-0 ${isStationDropdownOpen ? 'rotate-180' : ''}`} /></button>
                     {isStationDropdownOpen && (<div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-[20px] shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100 p-3"><div className="flex items-center justify-between p-2 border-b mb-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">站點篩選</span><div className="flex gap-3"><button onClick={() => setDashboardFilter({...dashboardFilter, stations: availableStations})} className="text-xs font-black text-blue-600 hover:underline whitespace-nowrap">全選</button><button onClick={() => setDashboardFilter({...dashboardFilter, stations: []})} className="text-xs font-black text-slate-500 hover:underline whitespace-nowrap">清除</button></div></div><div className="max-h-80 overflow-y-auto space-y-1 custom-scrollbar">{availableStations.map(st => { const isChecked = dashboardFilter.stations.includes(st); return (<button key={st} onClick={() => { const s = dashboardFilter.stations.includes(st) ? dashboardFilter.stations.filter(x=>x!==st) : [...dashboardFilter.stations, st]; setDashboardFilter({...dashboardFilter, stations: s}); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${isChecked ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}><div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>{isChecked && <Check size={12} className="text-white" strokeWidth={4} />}</div><span className="truncate text-left flex-1 text-xs">{String(st)}</span></button>); })}</div></div>)}
                   </div>
+                  {/* 狀態篩選 */}
                   <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[160px] sm:min-w-[200px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}><option>全部</option><option>未完成案件 (全部)</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
                   {/* 特殊搜尋 */}
                   <div className="relative shrink-0" ref={specialSearchRef}>
@@ -1312,6 +1322,7 @@ const App = () => {
                             {['本期已完工', '前期已完工', '本期待追蹤', '前期待追蹤'].map(f => (
                               <button key={f} onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === f ? '' : f}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>{String(f)}</button>
                             ))}
+                            {/* 第三列：約內已完工 與 內控管理 並列 */}
                             <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:border-indigo-300'}`}>約內已完工</button>
                             <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
                           </div>
@@ -1320,7 +1331,7 @@ const App = () => {
                       </div>
                     )}
                   </div>
-                  {/* 匯出 */}
+                  {/* 匯出功能 */}
                   <div className="flex items-center xl:ml-auto shrink-0 group"><div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button></div>
                 </div>
               </div>

@@ -40,10 +40,11 @@ import {
   Check,
   ChevronDown,
   Settings2,
-  Edit3
+  Edit3,
+  Info
 } from 'lucide-react';
 
-// --- 全域輔助：UUID 生成器 (相容性修正) ---
+// --- 全域輔助：UUID 生成器 ---
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -55,52 +56,25 @@ const generateUUID = () => {
 };
 
 /**
- * 環境變數讀取 (安全加固版)
+ * Firebase 初始化與 App ID
  */
-const getSafeEnv = () => {
-  let env = {};
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-      env = import.meta.env;
-    }
-  } catch (e) {}
-  if (!env.VITE_FIREBASE_CONFIG && typeof process !== 'undefined' && process.env) {
-    env = { ...env, ...process.env };
-  }
-  return env;
-};
-
-const safeEnv = getSafeEnv();
-
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
   }
-  const configStr = safeEnv.VITE_FIREBASE_CONFIG;
-  if (configStr) {
-    try {
-      return JSON.parse(configStr);
-    } catch (e) {
-      console.error("Firebase config 解析失敗:", e);
-    }
-  }
   return {};
 };
 
+// 保持動態獲取 App ID 以符合環境安全規則，但 UI 不顯示
 const getAppId = () => {
-  let id = 'mrt-jdm-repair';
   if (typeof __app_id !== 'undefined' && __app_id) {
-    id = __app_id;
-  } else if (safeEnv.VITE_APP_ID) {
-    id = safeEnv.VITE_APP_ID;
+    return __app_id;
   }
-  // 修正：強制替換斜線與點號，避免破壞 Firestore 路徑結構
-  return String(id).replace(/[\/\\.]/g, '_');
+  return 'mrt-jdm-repair-default';
 };
 
 const firebaseConfig = getFirebaseConfig();
-// 只有在具備 apiKey 的情況下才初始化，避免 Firebase 丟出致命錯誤
-const app = firebaseConfig && firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null;
+const app = firebaseConfig?.apiKey ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 const appId = getAppId();
@@ -118,11 +92,25 @@ const chunkArray = (array, size) => {
 
 function getInitialFormState() {
   return {
-    station: '', address: '', tenant: '', phone: '', repairType: '2.1', reportDate: '', repairItems: [],
+    station: '', 
+    address: '', 
+    tenant: '', 
+    phone: '', 
+    repairType: '2.1', 
+    reportDate: '', 
+    repairItems: [],
     costItems: [{ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }],
     incomeItems: [{ id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }],
-    quoteTitle: '', siteDescription: '收到承租人報修，請我方派員查看。', constructionDesc1: '', constructionDesc2: '',
-    completionDate: '', completionDesc1: '', completionDesc2: '', totalAmount: 0, satisfactionLevel: '', satisfactionScore: null,
+    quoteTitle: '', 
+    siteDescription: '收到承租人報修，請我方派員查看。', 
+    constructionDesc1: '經廠商檢測，。', 
+    constructionDesc2: '',
+    completionDate: '', 
+    completionDesc1: '廠商將OOO更新，測試功能正常，完成修繕。', 
+    completionDesc2: '', 
+    totalAmount: 0, 
+    satisfactionLevel: '', 
+    satisfactionScore: null,
     jdmControl: { caseNumber: '', reportDate: '', reportSubmitDate: '', approvalDate: '', closeDate: '', closeSubmitDate: '', checklist: [], status: '', remarks: '' }
   };
 }
@@ -130,7 +118,7 @@ function getInitialFormState() {
 const EDITABLE_INPUT_STYLE = "border-slate-300 bg-white hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm outline-none font-bold text-sm px-4 py-2.5";
 const HIGHLIGHT_INPUT_STYLE = "bg-amber-50 border-amber-400 text-amber-900 shadow-inner focus:ring-2 focus:ring-amber-200 transition-all outline-none font-black text-sm px-4 py-2.5";
 const READONLY_INPUT_STYLE = "border border-slate-200 bg-slate-100 text-slate-700 font-black cursor-default outline-none shadow-inner text-sm px-4 py-2.5";
-const SIDEBAR_INPUT_STYLE = "border-slate-400 bg-white hover:border-blue-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm outline-none font-bold text-sm px-4 py-2.5 placeholder:text-slate-400";
+const SIDEBAR_INPUT_STYLE = "border-slate-300 bg-white hover:border-blue-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm outline-none font-bold text-sm px-3 py-2 placeholder:text-slate-400";
 
 const SATISFACTION_LEVELS = [
   { label: '非常滿意', score: 100, color: 'bg-emerald-500', textColor: 'text-emerald-600', borderColor: 'border-emerald-200', bgColor: 'bg-emerald-50' },
@@ -170,8 +158,18 @@ const QuickPhraseMenu = React.memo(({ onSelect, type }) => {
   const menuRef = useRef(null);
   const phrases = useMemo(() => (
     type === 'report' 
-      ? ["檢附照片、報價單、合約內修繕價目表。", "檢附照片、報價單。", "檢附照片、報價單，本案修繕價格超過一萬元，檢附三家廠商報價單。"]
-      : ["檢附照片、滿意度調查表。", "檢附照片、保固書、滿意度調查表。", "檢附照片、發票、滿意度調查表。", "檢附照片、發票、保固書、滿意度調查表。"]
+      ? [
+          "檢附照片、報價單、合約內修繕價目表。", 
+          "檢附照片、報價單。", 
+          "檢附照片、報價單，本案修繕價格超過一萬元，檢附三家廠商報價單。"
+        ]
+      : [
+          "檢附照片、滿意度調查表。", 
+          "檢附照片、保固書、滿意度調查表，電子鎖保固日期：民國年月日至年月日。", 
+          "檢附照片、本案為空屋修繕，無須檢附滿意度調查表。", 
+          "檢附照片、發票、滿意度調查表。", 
+          "檢附照片、發票、本案為空屋修繕，無須檢附滿意度調查表。"
+        ]
   ), [type]);
 
   useEffect(() => {
@@ -218,60 +216,58 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
   const checklist = Array.isArray(item.jdmControl?.checklist) ? [...item.jdmControl.checklist] : [];
   const isMissingApproval = status === '結報' && !item.jdmControl?.approvalDate && item.repairType !== '2.1';
   
-  // 計算費用合計
   const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
 
   return (
-    <tr className="hover:bg-slate-50/50 group transition-colors border-b last:border-none border-slate-100">
-      <td className="p-4">
-        <span className={`px-3 py-1 rounded-full text-xs font-black flex justify-center shadow-sm whitespace-nowrap ${!status ? 'bg-slate-100 text-slate-500' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+    <tr className="hover:bg-slate-50/50 group transition-colors border-b last:border-none border-slate-100 text-[11px] md:text-xs">
+      <td className="p-2 text-center">
+        <span className={`px-2 py-0.5 rounded-full font-black inline-flex justify-center shadow-sm whitespace-nowrap w-20 ${!status ? 'bg-slate-100 text-slate-500' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
           {status || '待提報'}
         </span>
       </td>
-      <td className="p-4 text-center">
-        <div className="text-slate-600 font-mono font-black text-xs whitespace-nowrap">
+      <td className="p-2 text-center">
+        <div className="text-slate-600 font-mono font-black whitespace-nowrap">
           {reportDate || '--'}
         </div>
       </td>
-      <td className="p-4 truncate">
-        <div className="text-slate-900 font-black text-sm truncate">{String(item.jdmControl?.caseNumber || '未編號')}</div>
-        <div className="font-bold text-[10px] text-slate-500 mt-1 uppercase truncate">{String(item.station || '未知')}</div>
+      <td className="p-2">
+        <div className="text-slate-900 font-black truncate max-w-full">{String(item.jdmControl?.caseNumber || '未編號')}</div>
+        <div className="font-bold text-[9px] text-slate-500 mt-0.5 uppercase truncate">{String(item.station || '未知')}</div>
       </td>
-      <td className="p-4">
-        <div className="font-black text-slate-900 text-sm truncate">{String(item.tenant || '--')}</div>
-        <div className="text-[10px] text-slate-500 mt-1 truncate leading-relaxed font-bold" title={String(item.address || '')}>{String(item.address || '無地址')}</div>
+      <td className="p-2">
+        <div className="font-black text-slate-900 truncate max-w-full">{String(item.tenant || '--')}</div>
+        <div className="text-[9px] text-slate-500 mt-0.5 truncate leading-relaxed font-bold" title={String(item.address || '')}>{String(item.address || '無地址')}</div>
       </td>
-      <td className="p-4">
-        <div className="text-sm font-black text-slate-600 truncate leading-relaxed" title={String(item.quoteTitle || '')}>
+      <td className="p-2">
+        <div className="font-bold text-slate-600 truncate leading-relaxed max-w-full" title={String(item.quoteTitle || '')}>
           {String(item.quoteTitle || '--')}
         </div>
       </td>
-      {/* 費用合計欄位 */}
-      <td className="p-4 text-right">
-        <div className="font-mono font-black text-rose-600 text-sm whitespace-nowrap">
+      <td className="p-2 text-right">
+        <div className="font-mono font-black text-rose-600 whitespace-nowrap">
           ${totalCost.toLocaleString()}
         </div>
       </td>
-      <td className="p-4">
-        <div className="flex flex-wrap gap-2">
+      <td className="p-2">
+        <div className="flex flex-wrap gap-1">
           {isMissingApproval && (
-            <span className="px-2 py-0.5 bg-orange-50 text-orange-600 border border-orange-200 rounded-lg text-[10px] font-black whitespace-nowrap animate-pulse">缺奉核日</span>
+            <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 border border-orange-200 rounded text-[9px] font-black whitespace-nowrap animate-pulse">缺奉核日</span>
           )}
           {checklist.length > 0 ? (
             checklist.map(id => (
-              <span key={id} className="px-2 py-0.5 bg-orange-50 text-orange-600 border border-orange-100 rounded-lg text-[10px] font-black whitespace-nowrap">
+              <span key={id} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 border border-orange-100 rounded text-[9px] font-black whitespace-nowrap">
                 {String(CHECKLIST_MAP[id] || id)}
               </span>
             ))
           ) : (
-            !isMissingApproval && <span className="text-xs font-black text-emerald-600 flex items-center gap-2 whitespace-nowrap"><CheckCircle size={14} /> 資料齊備</span>
+            !isMissingApproval && <span className="font-black text-emerald-600 flex items-center gap-1.5 whitespace-nowrap"><CheckCircle size={10} /> 資料齊備</span>
           )}
         </div>
       </td>
-      <td className="p-4 text-center">
-        <div className="flex items-center justify-center gap-3">
-          <button onClick={() => onEdit(item)} className="p-2.5 bg-slate-900 text-white rounded-xl hover:bg-slate-700 shadow-sm transition-all active:scale-95 shrink-0"><ExternalLink size={18} /></button>
-          <button onClick={() => onDelete(item.id)} className="p-2.5 text-slate-300 hover:text-rose-500 transition-colors shrink-0"><Trash2 size={18} /></button>
+      <td className="p-2 text-center">
+        <div className="flex items-center justify-center gap-2">
+          <button onClick={() => onEdit(item)} className="p-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700 shadow-sm transition-all active:scale-95 shrink-0"><ExternalLink size={14} /></button>
+          <button onClick={() => onDelete(item.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors shrink-0"><Trash2 size={14} /></button>
         </div>
       </td>
     </tr>
@@ -283,8 +279,7 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
 const App = () => {
   // 1. State Definitions
   const [user, setUser] = useState(null);
-  const [configError, setConfigError] = useState(false); 
-  const [authError, setAuthError] = useState(null); // 新增：Auth 錯誤捕捉
+  const [configError, setConfigError] = useState(false);
   const [activeView, setActiveView] = useState('editor'); 
   const [currentDocId, setCurrentDocId] = useState(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false); 
@@ -310,7 +305,6 @@ const App = () => {
   const [floatingTip, setFloatingTip] = useState({ show: false, text: '' });
   const [statusConfirm, setStatusConfirm] = useState({ show: false, target: '', message: '' });
 
-  // 匯入狀態管理
   const [importStatus, setImportStatus] = useState({
     isProcessingA: false,
     isProcessingB: false,
@@ -318,7 +312,6 @@ const App = () => {
     hasImportedB: false
   });
 
-  // 手動模式狀態
   const [isManualMode, setIsManualMode] = useState(false);
 
   const [dashboardFilter, setDashboardFilter] = useState({ 
@@ -351,7 +344,6 @@ const App = () => {
     return { subtotal: sub, tax, serviceFee: fee, final: sub + fee + tax };
   }, [formData.repairItems, formData.repairType]);
 
-  // 財務統計：本案收益計算邏輯 (已調整為 總收入 - 總費用)
   const financialStats = useMemo(() => {
     const totalCosts = formData.costItems.reduce((sum, item) => sum + (Number(item.costAmount) || 0), 0);
     const totalIncome = formData.incomeItems.reduce((sum, item) => sum + (Number(item.incomeAmount) || 0), 0);
@@ -700,7 +692,9 @@ const App = () => {
           setSheetNames(wb.SheetNames);
           
           if (user && db) {
-             const chunks = chunkArray(all, 1000);
+             // 修正：調整分塊大小為 500 以提升處理速度
+             const chunks = chunkArray(all, 500);
+             
              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'address_master'), {
                chunkCount: chunks.length,
                sheets: wb.SheetNames,
@@ -708,11 +702,14 @@ const App = () => {
                totalRecords: all.length,
                originalFileName: file.name
              });
-             for (let i = 0; i < chunks.length; i++) {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', `address_master_chunk_${i}`), {
-                   list: chunks[i]
-                });
-             }
+
+             const uploadPromises = chunks.map((chunk, i) => 
+                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', `address_master_chunk_${i}`), {
+                   list: chunk
+                })
+             );
+             
+             await Promise.all(uploadPromises);
              setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
           } else {
              setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: file.name }));
@@ -750,14 +747,12 @@ const App = () => {
   const handleSaveToCloud = async () => {
     if (!user || !db) return;
     
-    // 邏輯：抽換/退件狀態下，備註為必填
     const needsRemarks = (['抽換', '退件'].includes(formData.jdmControl.status));
     if (needsRemarks && !formData.jdmControl.remarks.trim()) {
       showMessage("狀態為抽換或退件時，必須填寫案件備註", "error");
       return;
     }
 
-    // 邏輯：提報/結報狀態下，案號為必填
     const needsCaseNumber = (['提報', '結報'].includes(formData.jdmControl.status));
     if (needsCaseNumber && !formData.jdmControl.caseNumber.trim()) {
       showMessage("狀態為提報或結報時，JDM 系統案號必填", "error");
@@ -821,7 +816,6 @@ const App = () => {
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; script.async = true;
     script.onload = () => setIsXlsxLoaded(true); document.body.appendChild(script);
 
-    // 診斷配置是否缺失
     if (!firebaseConfig.apiKey) {
       setConfigError(true);
       return;
@@ -830,57 +824,63 @@ const App = () => {
     const initAuth = async () => { 
       if (!auth) return;
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token); 
-        else await signInAnonymously(auth); 
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token); 
+        } else {
+          await signInAnonymously(auth); 
+        }
       } catch (e) {
-        console.error("Auth init failed:", e);
-        setAuthError(e.code || e.message); // 捕捉錯誤代碼
+        console.error("Auth 初始失敗:", e);
         try { await signInAnonymously(auth); } catch (e2) {}
       }
     };
     initAuth();
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) setAuthError(null); // 登入成功後清除錯誤
-    }, (error) => {
-      setAuthError(error.code || error.message);
-    });
+    const unsub = onAuthStateChanged(auth, setUser);
     return () => { unsub(); if (document.body.contains(script)) document.body.removeChild(script); };
   }, []);
 
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user || !db || !auth.currentUser) return;
+    
     const loadMasterData = async () => {
+      setImportStatus(prev => ({ ...prev, isProcessingA: true, isProcessingB: true }));
       try {
         const addressPath = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'address_master');
         const addrDoc = await getDoc(addressPath);
         if (addrDoc.exists()) {
           const data = addrDoc.data();
-          setImportStatus(prev => ({ ...prev, fileNameA: data.originalFileName || '雲端資料庫' }));
-          
+          let combinedList = [];
           if (data.chunkCount && data.chunkCount > 0) {
              const promises = [];
              for (let i = 0; i < data.chunkCount; i++) {
                promises.push(getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', `address_master_chunk_${i}`)));
              }
              const chunkDocs = await Promise.all(promises);
-             let combinedList = [];
              chunkDocs.forEach(c => { if (c.exists()) combinedList = combinedList.concat(c.data().list || []); });
-             setFlattenedAddressData(combinedList);
           } else {
-             setFlattenedAddressData(data.list || []);
+             combinedList = data.list || [];
           }
+          setFlattenedAddressData(combinedList);
           setSheetNames(data.sheets || []);
+          setImportStatus(prev => ({ ...prev, isProcessingA: false, fileNameA: data.originalFileName || '雲端資料庫' }));
+        } else {
+          setImportStatus(prev => ({ ...prev, isProcessingA: false }));
         }
         
         const pricePath = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'price_master');
         const priceDoc = await getDoc(pricePath);
         if (priceDoc.exists()) {
           setFileBData(priceDoc.data().list || []);
-          setImportStatus(prev => ({ ...prev, hasImportedB: true }));
+          setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
+        } else {
+          setImportStatus(prev => ({ ...prev, isProcessingB: false }));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("Master data 讀取失敗:", e);
+        setImportStatus(prev => ({ ...prev, isProcessingA: false, isProcessingB: false }));
+      }
     };
+    
     loadMasterData();
   }, [user, db]);
 
@@ -888,7 +888,14 @@ const App = () => {
     if (!user || !db || !hasActivatedDashboard) return;
     setIsLoadingDashboard(true);
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'));
-    return onSnapshot(q, (snap) => { setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setIsLoadingDashboard(false); }, () => setIsLoadingDashboard(false));
+    const unsub = onSnapshot(q, (snap) => { 
+      setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() }))); 
+      setIsLoadingDashboard(false); 
+    }, (error) => {
+      console.error("案件監聽異常:", error);
+      setIsLoadingDashboard(false);
+    });
+    return unsub;
   }, [user, db, hasActivatedDashboard]);
 
   useEffect(() => {
@@ -923,7 +930,6 @@ const App = () => {
     });
   }, [calculationSummary, isSyncEnabled]);
 
-  // 新增捲軸鎖定邏輯：開啟側邊欄時禁止主頁面捲動
   useEffect(() => {
     if (isCostSidebarOpen) {
       document.body.style.overflow = 'hidden';
@@ -942,6 +948,9 @@ const App = () => {
         input[type=\"month\"]::-webkit-calendar-picker-indicator {
           position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: auto; height: auto; color: transparent; background: transparent; cursor: pointer; margin: 0; padding: 0; opacity: 0;
         }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       `}</style>
 
       {floatingTip.show && (
@@ -995,7 +1004,6 @@ const App = () => {
         <ChevronLeft size={14} className="opacity-40 md:opacity-100" />
       </button>
 
-      {/* 側邊抽屜 */}
       <div 
         className={`fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] transition-opacity duration-300 ${isCostSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
         onClick={() => setIsCostSidebarOpen(false)}
@@ -1003,106 +1011,107 @@ const App = () => {
       <div 
         className={`fixed top-0 right-0 h-full w-full md:w-[650px] bg-white z-[101] shadow-2xl flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCostSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
       >
-        <div className="bg-slate-900 text-white px-8 py-6 flex items-center justify-between shrink-0">
+        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4"><div className="bg-rose-600 p-2.5 rounded-xl"><DollarSign size={24} /></div><div><h2 className="font-black text-base uppercase tracking-widest whitespace-nowrap">內部收支登記</h2><p className="text-xs text-slate-400 font-bold whitespace-nowrap">僅供內部對帳與行政紀錄使用</p></div></div>
           <button onClick={() => setIsCostSidebarOpen(false)} className="p-2 hover:bg-slate-800 rounded-xl transition-colors"><X size={24} /></button>
         </div>
-        <div className="flex bg-slate-100 p-1.5 m-6 rounded-xl border border-slate-200">
-          <button onClick={() => setActiveTab('expense')} className={`flex-1 py-3.5 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'expense' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400'}`}>費用</button>
-          <button onClick={() => setActiveTab('income')} className={`flex-1 py-3.5 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'income' ? 'bg-white text-emerald-600 shadow-sm border border-emerald-100' : 'text-slate-400'}`}>收入</button>
+        <div className="flex bg-slate-100 p-1.5 m-4 rounded-xl border border-slate-200">
+          <button onClick={() => setActiveTab('expense')} className={`flex-1 py-3 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'expense' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400'}`}>費用</button>
+          <button onClick={() => setActiveTab('income')} className={`flex-1 py-3 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'income' ? 'bg-white text-emerald-600 shadow-sm border border-emerald-100' : 'text-slate-400'}`}>收入</button>
         </div>
-        <div className="flex-1 overflow-y-auto px-8 py-2 space-y-6">
+        <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 custom-scrollbar">
           {activeTab === 'expense' ? (
-            <div className="space-y-4 pb-24">
+            <div className="space-y-3 pb-24">
               {formData.costItems.map((item, idx) => (
-                <div key={item.id} className="relative bg-white p-6 rounded-2xl border border-slate-200 shadow-sm group">
+                <div key={item.id} className="relative bg-white p-4 rounded-2xl border border-slate-200 shadow-sm group">
                   <div className="absolute left-0 top-0 bottom-0 w-2 bg-rose-500 rounded-l-2xl"></div>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="md:col-span-2 space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">維修廠商</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.contractor} onChange={(e) => { const n = [...formData.costItems]; n[idx].contractor = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
-                      <div className="space-y-1.5 relative"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1.5 -right-1.5 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={18} /></button></div>
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">維修廠商</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.contractor} onChange={(e) => { const n = [...formData.costItems]; n[idx].contractor = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
+                      <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="md:col-span-2 space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">請款內容</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, workTask: n}); }} /></div>
-                      <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">發票 / 收據號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.invoiceNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].invoiceNumber = e.target.value; setFormData({...formData, invoiceNumber: n}); }} /></div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">請款內容</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, workTask: n}); }} /></div>
+                      <div className="space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票 / 收據號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.invoiceNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].invoiceNumber = e.target.value; setFormData({...formData, invoiceNumber: n}); }} /></div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="md:col-span-2 space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">費用單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.voucherNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].voucherNumber = e.target.value; setFormData({...formData, voucherNumber: n}); }} /></div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-black text-slate-500 uppercase font-black whitespace-nowrap shrink-0 block mb-0.5">費用金額</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">費用單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.voucherNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].voucherNumber = e.target.value; setFormData({...formData, voucherNumber: n}); }} /></div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">費用金額</label>
                         <div className="relative">
-                          <span className="absolute left-4 top-3 text-rose-500 font-black">$</span>
-                          <input type="number" min="0" onWheel={(e) => e.target.blur()} className={`w-full pl-9 pr-4 py-2.5 text-sm rounded-xl text-right font-black bg-rose-50/30 border-2 border-rose-200 text-rose-700 outline-none transition-all focus:border-rose-400 focus:ring-2 focus:ring-rose-100`} value={item.costAmount} onChange={(e) => { const val = e.target.value; const n = [...formData.costItems]; n[idx].costAmount = val === "" ? "" : Math.max(0, Number(val)); setFormData({...formData, costItems: n}); }} />
+                          <span className="absolute left-3 top-2 text-rose-500 font-black text-xs">$</span>
+                          <input type="number" min="0" onWheel={(e) => e.target.blur()} className={`w-full pl-7 pr-3 py-2 text-sm rounded-xl text-right font-black bg-rose-50/30 border border-rose-200 text-rose-700 outline-none transition-all focus:border-rose-400 focus:ring-2 focus:ring-rose-100`} value={item.costAmount} onChange={(e) => { const val = e.target.value; const n = [...formData.costItems]; n[idx].costAmount = val === "" ? "" : Math.max(0, Number(val)); setFormData({...formData, costItems: n}); }} />
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">備註</label><AutoResizeTextarea value={item.remarks} onChange={(e) => { const n = [...formData.costItems]; n[idx].remarks = e.target.value; setFormData({...formData, costItems: n}); }} className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} placeholder="輸入費用相關說明" /></div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">備註</label>
+                      <AutoResizeTextarea value={item.remarks} onChange={(e) => { const n = [...formData.costItems]; n[idx].remarks = e.target.value; setFormData({...formData, costItems: n}); }} className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl !py-2 max-h-[100px] overflow-y-auto custom-scrollbar`} placeholder="輸入費用相關說明" />
+                    </div>
                   </div>
                 </div>
               ))}
-              <button onClick={() => setFormData({...formData, costItems: [...formData.costItems, { id: crypto.randomUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }]})} className="group w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-rose-400 hover:text-rose-500 transition-all"><Plus size={20} /> 新增費用項目</button>
+              <button onClick={() => setFormData({...formData, costItems: [...formData.costItems, { id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }]})} className="group w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-rose-400 hover:text-rose-500 transition-all"><Plus size={18} /> 新增費用項目</button>
             </div>
           ) : (
-            <div className="space-y-4 pb-24">
+            <div className="space-y-3 pb-24">
               {formData.incomeItems.map((item, idx) => (
-                <div key={item.id} className="relative bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div key={item.id} className="relative bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                   <div className="absolute left-0 top-0 bottom-0 w-2 bg-emerald-500 rounded-l-2xl"></div>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="md:col-span-2 space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">請款廠商</label> {idx === 0 && <button onClick={() => setIsSyncEnabled(!isSyncEnabled)} className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 rounded border flex items-center gap-1.5 transition-all hover:bg-slate-200 shrink-0">{isSyncEnabled ? <Link2 size={10}/> : <Link2Off size={10}/>}{isSyncEnabled ? "金額連動中" : "手動編輯"}</button>}</div><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.source} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].source = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
-                      <div className="space-y-1.5 relative"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.receiveDate} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiveDate = e.target.value; setFormData({...formData, incomeItems: n}); }} /><button onClick={() => setFormData({...formData, incomeItems: formData.incomeItems.filter(ii => ii.id !== item.id)})} className="absolute -top-1.5 -right-1.5 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={18} /></button></div>
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 space-y-1"><div className="flex justify-between items-center"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">請款廠商</label> {idx === 0 && <button onClick={() => setIsSyncEnabled(!isSyncEnabled)} className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-100 rounded border flex items-center gap-1 transition-all hover:bg-slate-200 shrink-0">{isSyncEnabled ? <Link2 size={9}/> : <Link2Off size={9}/>}{isSyncEnabled ? "金額連動中" : "手動編輯"}</button>}</div><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.source} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].source = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
+                      <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiveDate} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiveDate = e.target.value; setFormData({...formData, incomeItems: n}); }} /><button onClick={() => setFormData({...formData, incomeItems: formData.incomeItems.filter(ii => ii.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="md:col-span-2 space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">契約類型</label><div className={`w-full ${READONLY_INPUT_STYLE} rounded-xl !bg-slate-100 border-slate-300`}>{formData.repairType === '2.1' ? "契約內" : "契約外"}</div></div>
-                      <div className="md:col-span-1 space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">發票號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.receiptNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiptNumber = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">契約類型</label><div className={`w-full border border-slate-200 bg-slate-50 text-slate-700 font-bold px-3 py-2 text-sm rounded-xl`}>{formData.repairType === '2.1' ? "契約內" : "契約外"}</div></div>
+                      <div className="md:col-span-1 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiptNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiptNumber = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="md:col-span-2 space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">收入單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE}`} value={item.incomeVoucherNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].incomeVoucherNumber = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
-                      <div className="md:col-span-1 space-y-1.5">
-                        <label className="text-xs font-black text-emerald-600 uppercase whitespace-nowrap shrink-0 block mb-0.5">收入金額(稅後)</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">收入單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.incomeVoucherNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].incomeVoucherNumber = e.target.value; setFormData({...formData, incomeVoucherNumber: n}); }} /></div>
+                      <div className="md:col-span-1 space-y-1">
+                        <label className="text-[10px] font-black text-emerald-600 uppercase whitespace-nowrap shrink-0 ml-1">收入金額(稅後)</label>
                         <div className="relative">
-                          <span className="absolute left-4 top-3 text-emerald-500 font-black">$</span>
-                          <input type="number" min="0" onWheel={(e) => e.target.blur()} readOnly={idx === 0 && isSyncEnabled} className={`w-full pl-9 ${SIDEBAR_INPUT_STYLE} text-right font-black transition-all ${ (idx === 0 && isSyncEnabled) ? 'bg-emerald-100/50 text-emerald-800 border-emerald-300' : 'bg-white text-emerald-700 border-emerald-400 shadow-sm focus:ring-2 focus:ring-emerald-100' }`} value={item.incomeAmount} onChange={(e) => { const val = Math.max(0, Number(e.target.value)); const n = [...formData.incomeItems]; n[idx].incomeAmount = val; if (idx === 0) setIsSyncEnabled(false); setFormData({...formData, incomeItems: n}); }} />
+                          <span className="absolute left-3 top-2 text-emerald-500 font-black text-xs">$</span>
+                          <input type="number" min="0" onWheel={(e) => e.target.blur()} readOnly={idx === 0 && isSyncEnabled} className={`w-full pl-7 pr-3 py-2 text-sm rounded-xl text-right font-black transition-all ${ (idx === 0 && isSyncEnabled) ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-white text-emerald-700 border-emerald-400 shadow-sm focus:ring-2 focus:ring-emerald-100' }`} value={item.incomeAmount} onChange={(e) => { const val = Math.max(0, Number(e.target.value)); const n = [...formData.incomeItems]; n[idx].incomeAmount = val; if (idx === 0) setIsSyncEnabled(false); setFormData({...formData, incomeItems: n}); }} />
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">備註</label><AutoResizeTextarea value={item.remarks} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].remarks = e.target.value; setFormData({...formData, incomeItems: n}); }} className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} placeholder="輸入收入相關說明" /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">備註</label><AutoResizeTextarea value={item.remarks} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].remarks = e.target.value; setFormData({...formData, incomeItems: n}); }} className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl !py-2 max-h-[100px] overflow-y-auto custom-scrollbar`} placeholder="輸入收入相關說明" /></div>
                   </div>
                 </div>
               ))}
-              <button onClick={() => setFormData({...formData, incomeItems: [...formData.incomeItems, { id: crypto.randomUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }]})} className="group w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-emerald-400 hover:text-emerald-500 transition-all"><Plus size={20} /> 新增收入項目</button>
+              <button onClick={() => setFormData({...formData, incomeItems: [...formData.incomeItems, { id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }]})} className="group w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-emerald-400 hover:text-emerald-500 transition-all"><Plus size={18} /> 新增收入項目</button>
             </div>
           )}
         </div>
         
-        {/* 固定底欄：本案收益統計數字 (已調整公式為 總收入 - 總費用) */}
-        <div className="p-8 bg-white border-t-2 flex flex-col gap-4 shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.06)]">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+        <div className="p-6 bg-white border-t flex flex-col gap-3 shadow-[0_-10px_30px_-5px_rgba(0,0,0,0.06)] shrink-0">
+          <div className="flex justify-between items-center border-b border-slate-50 pb-2">
             <div className="flex flex-col">
-              <span className="text-xs font-black text-slate-500 uppercase tracking-widest">本案收益</span>
-              <span className="text-[10px] font-bold text-slate-400 leading-none mt-1">(總收入 - 總費用)</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">本案收益</span>
+              <span className="text-[9px] font-bold text-slate-300 mt-0.5">(總收入 - 總費用)</span>
             </div>
-            <span className={`text-3xl font-black font-mono tracking-tighter ${financialStats.netProfit >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+            <span className={`text-2xl font-black font-mono tracking-tighter ${financialStats.netProfit >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
               {financialStats.netProfit >= 0 ? '+' : ''}${financialStats.netProfit.toLocaleString()}
             </span>
           </div>
           
           <div className="flex justify-between items-center">
-            <span className="text-sm font-black text-slate-500 uppercase tracking-widest">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
               {activeTab === 'expense' ? '費用合計' : '收入合計'}
             </span>
-            <span className={`text-4xl font-black font-mono tracking-tighter ${activeTab === 'expense' ? 'text-rose-600' : 'text-emerald-600'}`}>
+            <span className={`text-3xl font-black font-mono tracking-tighter ${activeTab === 'expense' ? 'text-rose-600' : 'text-emerald-600'}`}>
               ${(activeTab === 'expense' ? financialStats.totalCosts : formData.incomeItems.reduce((sum, item) => sum + (Number(item.incomeAmount) || 0), 0)).toLocaleString()}
             </span>
           </div>
           
-          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-2 bg-slate-900 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-[0.98] shadow-lg shadow-slate-200">
-            {isSaving ? <Clock className="animate-spin" size={20} /> : <Save size={20} />} 立即儲存並同步雲端
+          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-[0.98] shadow-lg shadow-slate-200">
+            {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} 立即儲存並同步雲端
           </button>
         </div>
       </div>
 
-      {/* 導覽分頁 */}
       <div className={`mx-auto mb-6 transition-all duration-300 ${activeView === 'dashboard' ? 'max-w-[1600px]' : 'max-w-5xl'}`}>
         <div className="bg-slate-900 rounded-3xl p-1.5 flex shadow-2xl shadow-slate-200">
           <button onClick={() => setActiveView('editor')} className={`flex-1 py-3 px-6 rounded-2xl text-sm font-black transition-all flex items-center justify-center gap-3 ${activeView === 'editor' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}>
@@ -1119,17 +1128,18 @@ const App = () => {
       <div className={`mx-auto space-y-6 transition-all duration-300 ${activeView === 'dashboard' ? 'max-w-[1600px]' : 'max-w-5xl'}`}>
         {activeView === 'editor' ? (
           <>
-            {/* 編輯器標頭 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6">
               <div className="flex items-center gap-4 shrink-0">
                 <div className={`p-3 rounded-2xl shadow-lg ${currentDocId ? 'bg-purple-600' : 'bg-blue-600'}`}><Database className="text-white" size={24} /></div>
-                <div>
+                <div className="flex flex-col">
                   <h1 className="text-xl font-black text-slate-900 tracking-tight">{currentDocId ? '編輯現有案件' : '建立新維修單'}</h1>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`w-2.5 h-2.5 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : configError ? 'bg-rose-500' : authError ? 'bg-red-500' : 'bg-orange-400 animate-bounce'}`}></span>
-                    <span className={`text-xs font-black uppercase tracking-widest ${configError || authError ? 'text-rose-600 animate-pulse' : 'text-slate-500'}`}>
-                      {configError ? '環境變數缺失，請檢查 Vercel 設定' : authError ? `連線錯誤: ${authError}` : !user ? '正在連線中...' : currentDocId ? `案件 ID: ${currentDocId.slice(0,8)}` : '雲端連線成功'}
-                    </span>
+                  <div className="flex flex-col mt-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : configError ? 'bg-rose-500' : 'bg-orange-400 animate-bounce'}`}></span>
+                      <span className={`text-[11px] font-black uppercase tracking-wider ${configError ? 'text-rose-600 animate-pulse' : 'text-slate-500'}`}>
+                        {configError ? '環境變數缺失' : !user ? '正在驗證連線中...' : '雲端同步啟動中'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1139,14 +1149,14 @@ const App = () => {
                     {importStatus.isProcessingA ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} 匯入代管清冊
                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('A', e)} disabled={importStatus.isProcessingA} />
                   </label>
-                  {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已匯入 {importStatus.fileNameA}</span>}
+                  {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已載入 {importStatus.fileNameA}</span>}
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold text-sm border border-emerald-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingB ? 'opacity-50 pointer-events-none' : ''}`}>
                     {importStatus.isProcessingB ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />} 匯入價目表
                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('B', e)} disabled={importStatus.isProcessingB} />
                   </label>
-                  {importStatus.hasImportedB && !importStatus.isProcessingB && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已匯入價目表</span>}
+                  {importStatus.hasImportedB && !importStatus.isProcessingB && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已同步雲端價目表</span>}
                 </div>
                 <div className="flex items-center gap-3 ml-2 border-l-2 pl-3 self-start">
                   <button onClick={handleResetClick} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><Plus size={14} /> 建立新案件</button>
@@ -1155,13 +1165,19 @@ const App = () => {
               </div>
             </div>
 
-            {/* 1. 報修人資料 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-              <h2 className="text-base font-black text-blue-700 uppercase mb-6 border-b pb-2 tracking-widest whitespace-nowrap shrink-0">1. 報修人資料</h2>
+              <div className="flex items-center justify-between mb-6 border-b pb-2">
+                <h2 className="text-base font-black text-blue-700 uppercase tracking-widest whitespace-nowrap shrink-0">1. 報修人資料</h2>
+                {flattenedAddressData.length === 0 && !importStatus.isProcessingA && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-lg border border-amber-200 text-xs font-bold animate-pulse">
+                    <Info size={14} /> 尚未載入代管清冊，請執行匯入以同步資料
+                  </div>
+                )}
+              </div>
               <div className="flex flex-col lg:flex-row gap-6">
                 <div className="lg:w-1/3 space-y-4">
-                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2 uppercase whitespace-nowrap shrink-0"><Search size={12} /> 站點搜尋</label><div className="relative"><Search size={14} className="absolute left-3.5 top-3 text-slate-300" /><input type="text" className={`w-full pl-10 ${EDITABLE_INPUT_STYLE}`} value={searchSheet} onChange={(e) => setSearchSheet(e.target.value)} placeholder="站點名稱" />{searchSheet && sheetNames.filter(n => n.includes(searchSheet)).length > 0 && (<div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-48 overflow-y-auto">{sheetNames.filter(n => n.includes(searchSheet)).map((n, i) => (<div key={i} className="p-3 hover:bg-blue-50 cursor-pointer text-sm font-bold transition-colors border-b last:border-none" onClick={() => { setFormData({...formData, station: n}); setSearchSheet(''); }}>{n}</div>))}</div>)}</div></div>
-                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2 uppercase whitespace-nowrap shrink-0"><User size={12} /> 地址 / 承租人搜尋</label><div className="relative"><Search size={14} className="absolute left-3.5 top-3 text-slate-300" /><input type="text" className={`w-full pl-10 ${EDITABLE_INPUT_STYLE}`} value={searchAddress} onChange={(e) => setSearchAddress(e.target.value)} placeholder="關鍵字搜尋" />{addressResults.length > 0 && (<div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-60 overflow-y-auto">{addressResults.map((r) => (<div key={r._uid} className="p-3 hover:bg-indigo-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData({ ...formData, station: r.sourceStation, address: r['建物門牌'] || r['門牌'] || '', tenant: r['承租人'] || r['姓名'] || '', phone: r['連絡電話'] || r['聯絡電話'] || r['電話'] || r['手機'] || '' }); setSearchAddress(''); }}><div className="flex-1 text-base font-bold">{String(r['建物門牌'] || r['門牌'] || '')}</div><MapPin size={14} className="text-slate-300 ml-2 shrink-0" /></div>))}</div>)}</div></div>
+                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2 uppercase whitespace-nowrap shrink-0"><Search size={12} /> 站點搜尋</label><div className="relative"><Search size={14} className="absolute left-3.5 top-3 text-slate-300" /><input type="text" className={`w-full pl-10 ${EDITABLE_INPUT_STYLE}`} value={searchSheet} onChange={(e) => setSearchSheet(e.target.value)} placeholder="站點名稱" />{searchSheet && sheetNames.filter(n => n.includes(searchSheet)).length > 0 && (<div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">{sheetNames.filter(n => n.includes(searchSheet)).map((n, i) => (<div key={i} className="p-3 hover:bg-blue-50 cursor-pointer text-sm font-bold transition-colors border-b last:border-none" onClick={() => { setFormData({...formData, station: n}); setSearchSheet(''); }}>{n}</div>))}</div>)}</div></div>
+                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2 uppercase whitespace-nowrap shrink-0"><User size={12} /> 地址 / 承租人搜尋</label><div className="relative"><Search size={14} className="absolute left-3.5 top-3 text-slate-300" /><input type="text" className={`w-full pl-10 ${EDITABLE_INPUT_STYLE}`} value={searchAddress} onChange={(e) => setSearchAddress(e.target.value)} placeholder="關鍵字搜尋" />{addressResults.length > 0 && (<div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-60 overflow-y-auto custom-scrollbar">{addressResults.map((r) => (<div key={r._uid} className="p-3 hover:bg-indigo-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData({ ...formData, station: r.sourceStation, address: r['建物門牌'] || r['門牌'] || '', tenant: r['承租人'] || r['姓名'] || '', phone: r['連絡電話'] || r['聯絡電話'] || r['電話'] || r['手機'] || '' }); setSearchAddress(''); }}><div className="flex-1 text-base font-bold">{String(r['建物門牌'] || r['門牌'] || '')}</div><MapPin size={14} className="text-slate-300 ml-2 shrink-0" /></div>))}</div>)}</div></div>
                   <div className="space-y-2"><button onClick={() => { setSearchSheet(''); setSearchAddress(''); setFormData({ ...formData, station: '', address: '', tenant: '', phone: '' }); }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 hover:text-slate-700 transition font-black text-xs uppercase border border-slate-200 whitespace-nowrap shrink-0"><RotateCcw size={12} /> 清除搜尋條件</button><button onClick={toggleManualMode} className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all font-black text-xs uppercase border ${isManualMode ? 'bg-amber-500 text-white border-amber-600 shadow-lg shadow-amber-200' : 'bg-white text-amber-600 border-amber-200 hover:bg-amber-50'} whitespace-nowrap shrink-0`}>{isManualMode ? <CheckCircle size={14} /> : <Edit3 size={14} />}{isManualMode ? '手動模式已開啟' : '手動填寫 (限車位)'}</button></div>
                 </div>
                 <div className="lg:w-2/3 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1222,14 +1238,23 @@ const App = () => {
               </div>
             </div>
 
-            {/* 2. 修繕項目與費用 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-              <div className="flex justify-between items-center mb-6 border-b pb-2 shrink-0 overflow-hidden"><h2 className="text-base font-black text-blue-800 uppercase tracking-widest whitespace-nowrap shrink-0">2. 修繕項目與費用</h2><div className="group relative" onMouseEnter={() => formData.repairItems.length > 0 && setFloatingTip({ show: true, text: "已有項目，鎖定編輯" })} onMouseLeave={() => setFloatingTip({ show: false, text: "" })}><select className={`text-xs p-2.5 border rounded-xl font-black whitespace-nowrap transition-all ${formData.repairItems.length > 0 ? 'text-slate-500 bg-slate-50 pointer-events-none cursor-default' : 'text-blue-700 bg-white cursor-pointer shadow-sm hover:border-blue-400'}`} value={formData.repairType} onChange={(e) => updateFormField('repairType', e.target.value)}><option value="2.1">契約內</option><option value="2.2">契約外</option></select></div></div>
-              <div className="space-y-4 mb-6">
-                <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">報價單標題</label>{formData.quoteTitle && (<button type="button" onClick={(e) => copyToClipboard(formData.quoteTitle, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap"><Copy size={12} /> 複製</button>)}</div><input type="text" className={`w-full ${EDITABLE_INPUT_STYLE}`} value={formData.quoteTitle} onChange={(e) => updateFormField('quoteTitle', e.target.value)} placeholder="報價標題" /></div>
-                {formData.repairType === '2.1' ? (<div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">搜尋項次或項目</label><div className="relative"><Search size={16} className="absolute left-3.5 top-3.5 text-slate-500" /><input type="text" className={`w-full pl-10 pr-4 py-3 rounded-xl border ${EDITABLE_INPUT_STYLE}`} value={searchB} onChange={(e) => setSearchB(e.target.value)} placeholder="搜尋項次或項目" />{searchB && (<div className="absolute z-10 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-56 overflow-y-auto">{fileBData.filter(b => b.id.toLowerCase().includes(searchB.toLowerCase()) || b.name.includes(searchB)).map((b, i) => (<div key={i} className="p-3 hover:bg-blue-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: crypto.randomUUID(), ...b, quantity: 1, isManual: false }] })); setSearchB(''); }}><div className="flex flex-col text-sm font-black"><span>{b.id}</span><span>{b.name}</span></div><span className="text-xs font-black text-emerald-600 shrink-0 ml-3">${b.price.toLocaleString()}</span></div>))}</div>)}</div></div>) : (<button onClick={() => setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: crypto.randomUUID(), id: '', name: '', unit: '', price: '', quantity: 1, isManual: true }] }))} className="w-full py-3 border-2 border-dashed border-blue-400 rounded-2xl font-black text-sm text-blue-600 bg-blue-50/30 flex justify-center items-center gap-2 transition-all hover:bg-blue-50 whitespace-nowrap"><Plus size={16} /> 新增自定義項目</button>)}
+              <div className="flex justify-between items-center mb-6 border-b pb-2 shrink-0 overflow-hidden">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-base font-black text-blue-800 uppercase tracking-widest whitespace-nowrap shrink-0">2. 修繕項目與費用</h2>
+                  {fileBData.length === 0 && !importStatus.isProcessingB && formData.repairType === '2.1' && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-lg border border-amber-200 text-xs font-bold animate-pulse">
+                      <Info size={14} /> 尚未同步雲端價目表
+                    </div>
+                  )}
+                </div>
+                <div className="group relative" onMouseEnter={() => formData.repairItems.length > 0 && setFloatingTip({ show: true, text: "已有項目，鎖定編輯" })} onMouseLeave={() => setFloatingTip({ show: false, text: "" })}><select className={`text-xs p-2.5 border rounded-xl font-black whitespace-nowrap transition-all ${formData.repairItems.length > 0 ? 'text-slate-500 bg-slate-50 pointer-events-none cursor-default' : 'text-blue-700 bg-white cursor-pointer shadow-sm hover:border-blue-400'}`} value={formData.repairType} onChange={(e) => updateFormField('repairType', e.target.value)}><option value="2.1">契約內</option><option value="2.2">契約外</option></select></div>
               </div>
-              <div className="overflow-x-auto border rounded-2xl shadow-sm"><table className="w-full text-sm border-collapse table-fixed"><thead className="bg-slate-50 text-xs text-slate-500 font-black uppercase border-b"><tr><th className="p-4 w-28 text-center whitespace-nowrap shrink-0">項次</th><th className="p-4 text-left whitespace-nowrap shrink-0">項目</th><th className="p-4 w-20 text-center whitespace-nowrap shrink-0">單位</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">單價</th><th className="p-4 w-24 text-center whitespace-nowrap shrink-0">數量</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">小計</th><th className="p-4 w-12 whitespace-nowrap shrink-0"></th></tr></thead><tbody className="divide-y divide-slate-100 bg-white">
+              <div className="space-y-4 mb-6">
+                <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">報價單標題</label>{formData.quoteTitle && (<button type="button" onClick={(e) => copyToClipboard(formData.quoteTitle, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div><input type="text" className={`w-full ${EDITABLE_INPUT_STYLE}`} value={formData.quoteTitle} onChange={(e) => updateFormField('quoteTitle', e.target.value)} placeholder="報價標題" /></div>
+                {formData.repairType === '2.1' ? (<div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">搜尋項次或項目</label><div className="relative"><Search size={16} className="absolute left-3.5 top-3.5 text-slate-500" /><input type="text" className={`w-full pl-10 pr-4 py-3 rounded-xl border ${EDITABLE_INPUT_STYLE}`} value={searchB} onChange={(e) => setSearchB(e.target.value)} placeholder="搜尋項次或項目" />{searchB && (<div className="absolute z-10 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-56 overflow-y-auto custom-scrollbar">{fileBData.filter(b => b.id.toLowerCase().includes(searchB.toLowerCase()) || b.name.includes(searchB)).map((b, i) => (<div key={i} className="p-3 hover:bg-blue-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), ...b, quantity: 1, isManual: false }] })); setSearchB(''); }}><div className="flex flex-col text-sm font-black"><span>{b.id}</span><span>{b.name}</span></div><span className="text-xs font-black text-emerald-600 shrink-0 ml-3">${b.price.toLocaleString()}</span></div>))}</div>)}</div></div>) : (<button onClick={() => setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), id: '', name: '', unit: '', price: '', quantity: 1, isManual: true }] }))} className="w-full py-3 border-2 border-dashed border-blue-400 rounded-2xl font-black text-sm text-blue-600 bg-blue-50/30 flex justify-center items-center gap-2 transition-all hover:bg-blue-50 whitespace-nowrap"><Plus size={16} /> 新增自定義項目</button>)}
+              </div>
+              <div className="overflow-x-auto border rounded-2xl shadow-sm custom-scrollbar"><table className="w-full text-sm border-collapse table-fixed"><thead className="bg-slate-50 text-xs text-slate-500 font-black uppercase border-b"><tr><th className="p-4 w-28 text-center whitespace-nowrap shrink-0">項次</th><th className="p-4 text-left whitespace-nowrap shrink-0">項目</th><th className="p-4 w-20 text-center whitespace-nowrap shrink-0">單位</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">單價</th><th className="p-4 w-24 text-center whitespace-nowrap shrink-0">數量</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">小計</th><th className="p-4 w-12 whitespace-nowrap shrink-0"></th></tr></thead><tbody className="divide-y divide-slate-100 bg-white">
                 {formData.repairItems.length === 0 ? (<tr><td colSpan="7" className="p-16 text-center text-slate-300 font-black italic uppercase tracking-widest">目前尚未加入修繕內容</td></tr>) : (formData.repairItems.map((item, idx) => (
                   <tr key={item.uid} className="hover:bg-blue-50/20 group transition-colors">
                     <td className="p-3 text-center font-mono text-sm text-slate-500 truncate">{item.isManual ? (idx + 1) : item.id}</td>
@@ -1249,19 +1274,19 @@ const App = () => {
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-2 shrink-0"><h2 className="text-base font-black text-blue-800 uppercase tracking-widest whitespace-nowrap shrink-0">3. 提報</h2><div className="flex items-center gap-2 text-xs font-black text-slate-500 whitespace-nowrap shrink-0">報修日期 <input type="date" className={`px-2 py-1.5 rounded-xl border ${formData.reportDate ? HIGHLIGHT_INPUT_STYLE : EDITABLE_INPUT_STYLE} !text-xs cursor-pointer`} value={formData.reportDate} onChange={(e) => updateFormField('reportDate', e.target.value)} /></div></div>
                 <div className="space-y-4">
-                  <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">現場現況</label>{formData.siteDescription && (<button onClick={(e) => copyToClipboard(formData.siteDescription, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap"><Copy size={12} /> 複製</button>)}</div><AutoResizeTextarea value={formData.siteDescription} onChange={(e) => updateFormField('siteDescription', e.target.value)} className="w-full p-4 rounded-2xl bg-white" rows={3} /></div>
+                  <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">現場現況</label>{formData.siteDescription && (<button onClick={(e) => copyToClipboard(formData.siteDescription, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div><AutoResizeTextarea value={formData.siteDescription} onChange={(e) => updateFormField('siteDescription', e.target.value)} className="w-full p-4 rounded-2xl bg-white" rows={3} /></div>
                   <div className="space-y-1.5">
-                    <div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">施工說明一</label>{formData.constructionDesc1 && (<button onClick={(e) => copyToClipboard(formData.constructionDesc1, e)} className="flex items-center gap-2.5 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-black transition-all hover:bg-blue-100 whitespace-nowrap"><Copy size={16} /> 複製</button>)}</div>
+                    <div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">施工說明一</label>{formData.constructionDesc1 && (<button onClick={(e) => copyToClipboard(formData.constructionDesc1, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div>
                     <AutoResizeTextarea value={formData.constructionDesc1} onChange={(e) => updateFormField('constructionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="輸入檢測結論與建議處理方式" />
-                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">施工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('constructionDesc2', p)} type="report" />{formData.constructionDesc2 && (<button onClick={(e) => copyToClipboard(formData.constructionDesc2, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap"><Copy size={12} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.constructionDesc2} onChange={(e) => updateFormField('constructionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明提報所檢附之文件" />
+                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">施工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('constructionDesc2', p)} type="report" />{formData.constructionDesc2 && (<button onClick={(e) => copyToClipboard(formData.constructionDesc2, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.constructionDesc2} onChange={(e) => updateFormField('constructionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明提報所檢附之文件" />
                   </div>
                 </div>
               </div>
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-2 shrink-0"><h2 className="text-base font-black text-emerald-800 uppercase tracking-widest whitespace-nowrap shrink-0">4. 結報</h2><div className="flex items-center gap-2 text-xs font-black text-slate-500 whitespace-nowrap shrink-0">完工日期 <input type="date" className={`px-2 py-1.5 rounded-xl border ${formData.completionDate ? HIGHLIGHT_INPUT_STYLE : EDITABLE_INPUT_STYLE} !text-xs cursor-pointer`} value={formData.completionDate} onChange={(e) => updateFormField('completionDate', e.target.value)} /></div></div>
                 <div className="space-y-4">
-                  <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明一</label>{formData.completionDesc1 && (<button onClick={(e) => copyToClipboard(formData.completionDesc1, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap"><Copy size={12} /> 複製</button>)}</div><AutoResizeTextarea value={formData.completionDesc1} onChange={(e) => updateFormField('completionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="修繕最終成果" />
-                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" />{formData.completionDesc2 && (<button onClick={(e) => copyToClipboard(formData.completionDesc2, e)} className="flex items-center gap-3 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap"><Copy size={16} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明結報所檢附之文件" /></div>
+                  <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明一</label>{formData.completionDesc1 && (<button onClick={(e) => copyToClipboard(formData.completionDesc1, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div><AutoResizeTextarea value={formData.completionDesc1} onChange={(e) => updateFormField('completionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="修繕最終成果" />
+                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" />{formData.completionDesc2 && (<button onClick={(e) => copyToClipboard(formData.completionDesc2, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明結報所檢附之文件" /></div>
                   <div className="pt-4 border-t-2 border-slate-50">
                     <div className="flex items-center justify-between mb-4">
                       <label className="text-xs font-black text-slate-600 uppercase tracking-widest whitespace-nowrap shrink-0">客戶滿意度調查</label>
@@ -1273,7 +1298,6 @@ const App = () => {
               </div>
             </div>
 
-            {/* 5. JDM 報修進度 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
               <div className="flex items-center justify-between border-b pb-3 shrink-0 overflow-hidden"><h2 className="text-base font-black text-slate-900 uppercase tracking-widest whitespace-nowrap shrink-0 flex items-center gap-3">5. JDM 報修進度</h2></div>
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1287,26 +1311,22 @@ const App = () => {
                 <div className="lg:col-span-4 bg-slate-900 text-white p-6 rounded-3xl shadow-xl space-y-6">
                   <div><label className="text-xs font-black text-slate-400 uppercase flex items-center gap-3 tracking-widest whitespace-nowrap shrink-0"><Hash size={14} className="text-blue-400" /> JDM 系統案號</label><input type="text" className={`w-full px-4 py-2.5 text-sm rounded-xl bg-slate-800 text-white mt-1.5 outline-none focus:border-blue-500 font-mono font-black transition-all border ${getJdmFieldError('caseNumber') ? 'ring-2 ring-rose-500 border-rose-500' : 'border-slate-700'}`} value={formData.jdmControl.caseNumber} onChange={(e) => updateJdmField('caseNumber', e.target.value)} /></div>
                   <div className="space-y-3"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">目前狀態</label><div className="grid grid-cols-2 gap-3">{['提報', '結報', '抽換', '退件'].map((s) => { const is = formData.jdmControl.status === s; return (<label key={s} onClick={(e) => { e.preventDefault(); handleStatusClick(s); }} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${is ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-lg' : 'border-slate-800 bg-slate-800/50 text-slate-500 hover:border-slate-700'}`}><input type="radio" className="sr-only" checked={is} readOnly /><div className={`w-2.5 h-2.5 rounded-full shrink-0 ${is ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'}`}></div><span className="text-sm font-black whitespace-nowrap">{String(s)}</span></label>); })}</div></div>
-                  <div className="space-y-3"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">案件備註</label>{(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && (<div className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-black rounded border border-rose-500/30 animate-pulse uppercase whitespace-nowrap shrink-0">{jdmErrors.length > 0 ? "資料異常必填" : "變更原因必填"}</div>)}</div><div className="relative"><AutoResizeTextarea value={formData.jdmControl.remarks} onChange={(e) => updateJdmField('remarks', e.target.value)} className={`w-full p-4 rounded-2xl text-sm bg-slate-800 border-slate-700 text-white transition-all focus:border-blue-400 ${(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && !formData.jdmControl.remarks.trim() ? 'ring-2 ring-rose-500/50 border-rose-500' : ''}`} placeholder={(jdmErrors.length > 0 || ['退件', '抽換'].includes(formData.jdmControl.status)) ? "請說明異常或變更原因 (必填)" : "請輸入案件備註 o或退補原因"} /></div></div>
+                  <div className="space-y-3"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">案件備註</label>{(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && (<div className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-black rounded border border-rose-500/30 animate-pulse uppercase whitespace-nowrap shrink-0">{jdmErrors.length > 0 ? "資料異常必填" : "變更原因必填"}</div>)}</div><div className="relative"><AutoResizeTextarea value={formData.jdmControl.remarks} onChange={(e) => updateJdmField('remarks', e.target.value)} className={`w-full p-4 rounded-2xl text-sm bg-slate-800 border-slate-700 text-white transition-all focus:border-blue-400 ${(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && !formData.jdmControl.remarks.trim() ? 'ring-2 ring-rose-500/50 border-rose-500' : ''}`} placeholder={(jdmErrors.length > 0 || ['退件', '抽換'].includes(formData.jdmControl.status)) ? "請說明異常或變更原因 (必填)" : "請輸入案件備註 或退補原因"} /></div></div>
                 </div>
               </div>
             </div>
           </>
         ) : (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* 案件管理中心篩選器 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col gap-5">
               <div className="flex flex-col xl:flex-row gap-4 items-stretch xl:items-center">
                 <div className="flex-1 relative min-w-0"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" placeholder="搜尋門牌、承租人、案號、項目或標題..." className={`w-full pl-12 pr-6 py-3.5 rounded-2xl border font-bold text-sm ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.search} onChange={(e) => setDashboardFilter({...dashboardFilter, search: e.target.value})} /></div>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
-                  {/* 站點篩選 */}
                   <div className="relative shrink-0" ref={stationDropdownRef}>
                     <button onClick={() => setIsStationDropdownOpen(!isStationDropdownOpen)} className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-black text-sm border bg-white min-w-[140px] sm:min-w-[160px] transition-all hover:border-blue-400 shadow-sm ${dashboardFilter.stations.length > 0 ? 'border-blue-500 text-blue-600 bg-blue-50/30' : 'border-slate-300 text-slate-700'}`}><Building2 size={16} className="shrink-0" /><span className="flex-1 text-left whitespace-nowrap truncate">{dashboardFilter.stations.length === 0 ? '所有站點' : dashboardFilter.stations.length === 1 ? `${String(dashboardFilter.stations[0])}` : `已選 ${dashboardFilter.stations.length}`}</span><ChevronDown size={14} className={`transition-transform duration-200 shrink-0 ${isStationDropdownOpen ? 'rotate-180' : ''}`} /></button>
                     {isStationDropdownOpen && (<div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-[20px] shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100 p-3"><div className="flex items-center justify-between p-2 border-b mb-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">站點篩選</span><div className="flex gap-3"><button onClick={() => setDashboardFilter({...dashboardFilter, stations: availableStations})} className="text-xs font-black text-blue-600 hover:underline whitespace-nowrap">全選</button><button onClick={() => setDashboardFilter({...dashboardFilter, stations: []})} className="text-xs font-black text-slate-500 hover:underline whitespace-nowrap">清除</button></div></div><div className="max-h-80 overflow-y-auto space-y-1 custom-scrollbar">{availableStations.map(st => { const isChecked = dashboardFilter.stations.includes(st); return (<button key={st} onClick={() => { const s = dashboardFilter.stations.includes(st) ? dashboardFilter.stations.filter(x=>x!==st) : [...dashboardFilter.stations, st]; setDashboardFilter({...dashboardFilter, stations: s}); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${isChecked ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}><div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>{isChecked && <Check size={12} className="text-white" strokeWidth={4} />}</div><span className="truncate text-left flex-1 text-xs">{String(st)}</span></button>); })}</div></div>)}
                   </div>
-                  {/* 狀態篩選 */}
                   <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[160px] sm:min-w-[200px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}><option>全部</option><option>未完成案件 (全部)</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
-                  {/* 特殊搜尋 */}
                   <div className="relative shrink-0" ref={specialSearchRef}>
                     <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>
                     {isSpecialSearchOpen && (
@@ -1322,8 +1342,7 @@ const App = () => {
                             {['本期已完工', '前期已完工', '本期待追蹤', '前期待追蹤'].map(f => (
                               <button key={f} onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === f ? '' : f}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>{String(f)}</button>
                             ))}
-                            {/* 第三列：約內已完工 與 內控管理 並列 */}
-                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:border-indigo-300'}`}>約內已完工</button>
+                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>約內已完工</button>
                             <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
                           </div>
                         </div>
@@ -1331,15 +1350,13 @@ const App = () => {
                       </div>
                     )}
                   </div>
-                  {/* 匯出功能 */}
                   <div className="flex items-center xl:ml-auto shrink-0 group"><div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button></div>
                 </div>
               </div>
             </div>
-            {/* 案件列表 */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden min-h-[450px] flex flex-col">
               {!isDashboardSearchActive ? (<div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>) : (
-                <div className="overflow-x-auto"><table className="w-full text-left border-collapse table-fixed min-w-[1400px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-36 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">進度狀態</th><th className="w-32 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-48 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-80 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-64 p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-32 p-4 text-xs font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-4 text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-32 p-4 text-xs font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table><div className="bg-slate-50 p-4 text-xs font-black text-slate-500 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
+                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table><div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
               )}
             </div>
           </div>

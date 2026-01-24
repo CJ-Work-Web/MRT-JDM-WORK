@@ -80,18 +80,39 @@ const generateUUID = () => {
 };
 
 /**
- * Firebase 初始化配置與環境變數讀取
+ * 環境變數讀取 (相容 Google 開發環境與 Vercel 生產環境)
+ */
+const getSafeEnv = () => {
+  let env = {};
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      env = import.meta.env;
+    }
+  } catch (e) {}
+  if (!env.VITE_FIREBASE_CONFIG && typeof process !== 'undefined' && process.env) {
+    env = { ...env, ...process.env };
+  }
+  return env;
+};
+
+/**
+ * Firebase 初始化配置
  */
 const getFirebaseConfig = () => {
+  // 1. 優先嘗試讀取 Google 開發環境注入的配置
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
   }
-  // 嘗試讀取 Vite 環境變數 (Vercel 生產環境)
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_FIREBASE_CONFIG) {
-        return JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+  // 2. 次之讀取 Vercel 或本地環境變數
+  const env = getSafeEnv();
+  const configStr = env.VITE_FIREBASE_CONFIG;
+  if (configStr) {
+    try {
+      return JSON.parse(configStr);
+    } catch (e) {
+      console.error("Firebase config 解析失敗:", e);
     }
-  } catch(e) {}
+  }
   return {};
 };
 
@@ -103,6 +124,7 @@ const getAppId = () => {
 };
 
 const firebaseConfig = getFirebaseConfig();
+// 防呆初始化：如果 config 是空的，app 會是 undefined
 const app = firebaseConfig?.apiKey ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
@@ -127,16 +149,16 @@ function getInitialFormState() {
     phone: '', 
     repairType: '2.1', 
     reportDate: '', 
-    isSubLease: false, 
+    isSubLease: false, // 標記是否為包租契約
     repairItems: [],
     costItems: [{ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }],
     incomeItems: [{ id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }],
     quoteTitle: '', 
     siteDescription: '收到承租人報修，請我方派員查看。', 
-    constructionDesc1: '經廠商檢測，。', 
+    constructionDesc1: '經廠商檢測，。', // 預設文字
     constructionDesc2: '',
     completionDate: '', 
-    completionDesc1: '廠商將OOO更新，測試功能正常，完成修繕。', 
+    completionDesc1: '廠商將OOO更新，測試功能正常，完成修繕。', // 預設文字
     completionDesc2: '', 
     totalAmount: 0, 
     satisfactionLevel: '', 
@@ -209,7 +231,7 @@ const QuickPhraseMenu = React.memo(({ onSelect, type }) => {
 
   return (
     <div className="relative inline-block shrink-0" ref={menuRef}>
-      <button type="button" onClick={() => setIsOpen(!isOpen)} className="flex items-center gap-1.5 px-3 py-1 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-all text-xs font-bold border border-purple-200 whitespace-nowrap"><MessageSquare size={12} /> 快速句型</button>
+      <button type="button" onClick={() => setIsOpen(!isOpen)} className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-all text-xs font-bold border border-purple-200 whitespace-nowrap"><MessageSquare size={12} /> 快速句型</button>
       {isOpen && (
         <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-100 text-left">
           <div className="p-2.5 bg-slate-50 border-b border-slate-100 text-xs font-black text-slate-500 uppercase tracking-widest px-4">選擇快速句型</div>
@@ -352,6 +374,7 @@ const App = () => {
 
   const [isManualMode, setIsManualMode] = useState(false);
 
+  // 完整的 Dashboard 篩選器狀態 (100% 還原)
   const [dashboardFilter, setDashboardFilter] = useState({ 
     search: '', 
     status: '全部', 
@@ -397,10 +420,10 @@ const App = () => {
     const errors = [];
     const sequence = [
       { key: 'reportDate', label: '提報日' },
-      { key: 'reportSubmitDate', label: '送件日' }, 
+      { key: 'reportSubmitDate', label: '送件日' }, // 更名：提報送件日 -> 送件日
       { key: 'approvalDate', label: '奉核日' },
       { key: 'closeDate', label: '結報日' },
-      { key: 'closeSubmitDate', label: '送件日' } 
+      { key: 'closeSubmitDate', label: '送件日' } // 更名：結報送件日 -> 送件日
     ];
 
     for (let i = 0; i < sequence.length; i++) {
@@ -529,7 +552,7 @@ const App = () => {
       else filtered = filtered.filter(c => c.jdmControl?.status === dashboardFilter.status);
     }
     
-    // 特殊公式篩選邏輯還原
+    // 特殊公式篩選邏輯 (100% 還原)
     if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
       const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
       switch (dashboardFilter.specialFormula) {
@@ -588,7 +611,7 @@ const App = () => {
   const handleStatusClick = (targetStatus) => {
     if (formData.jdmControl.status === targetStatus) { updateJdmField('status', ''); return; }
     
-    // 實作自動化檢核邏輯
+    // 自動化檢核邏輯
     if (targetStatus === '提報') {
       setStatusConfirm({ show: true, target: targetStatus, message: `變更為提報後，系統將自動從待補清單移除「維修前照片」與「報價單」。` });
     } else if (targetStatus === '結報') {
@@ -783,7 +806,7 @@ const App = () => {
        else if (exportMode === '工作提報單') return { "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "故障描述": combinedDesc, "報修日": fmt(item.jdmControl?.reportDate), "完工日": fmt(item.jdmControl?.closeDate) };
        else if (exportMode === '滿意度調查') return { "JDM系統案號": String(item.jdmControl?.caseNumber || ''), "捷運站點": String(item.station || ''), "門牌": String(item.address || ''), "施工說明": combinedDesc, "滿意度分級": String(item.satisfactionLevel || '--'), "滿意度分數": item.satisfactionScore, "類別": item.repairType === '2.1' ? "契約內" : "契約外" };
        else if (exportMode === '內控管理') {
-          // 內控邏輯
+          // 內控邏輯 (100% 還原)
           const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
           const costVendor = (item.costItems || []).map(ci => ci.contractor).join(', ');
           const costInv = (item.costItems || []).map(ci => ci.invoiceNumber).join(', ');
@@ -828,7 +851,7 @@ const App = () => {
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; script.async = true;
     script.onload = () => setIsXlsxLoaded(true); document.body.appendChild(script);
     
-    // 白屏修復：確保 auth 存在才監聽
+    // 白屏修復：確保 auth 存在才監聽 (Resilience)
     if (auth) {
         const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setIsAuthReady(true); });
         return () => unsub();
@@ -841,7 +864,7 @@ const App = () => {
   // --- 登入畫面 ---
   if (!isAuthReady) return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={48} /></div>;
   
-  // 錯誤畫面：如果環境變數缺失
+  // 錯誤畫面：如果環境變數缺失 (白屏防護)
   if (configError) return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
           <div className="max-w-md w-full p-8 bg-white/10 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl">
@@ -903,7 +926,7 @@ const App = () => {
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-800 font-sans pb-32" onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}>
       
-      {/* 側邊收支登記 (欄位完整還原) */}
+      {/* 側邊收支登記 (欄位100%還原) */}
       <div className={`fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] transition-opacity ${isCostSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsCostSidebarOpen(false)}></div>
       <div className={`fixed top-0 right-0 h-full w-full md:w-[650px] bg-white z-[101] shadow-2xl flex flex-col transition-transform duration-500 ${isCostSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
@@ -999,7 +1022,7 @@ const App = () => {
                 <div className={`p-3 rounded-2xl shadow-lg bg-blue-600`}><Database className="text-white" size={24} /></div>
                 <div className="flex flex-col">
                   <h1 className="text-xl font-black text-slate-900 tracking-tight">{currentDocId ? '編輯現有案件' : '建立新修繕單'}</h1>
-                  <span className="text-[11px] font-black text-slate-500">管理員：{user.email}</span>
+                  <span className="text-[11px] font-black text-slate-500">已登入：{user.email}</span>
                 </div>
               </div>
               <div className="flex flex-wrap justify-end gap-3 w-full">
@@ -1118,7 +1141,7 @@ const App = () => {
                   {jdmErrors.length > 0 && <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-600 font-black text-xs animate-pulse"><AlertTriangle size={14}/> {jdmErrors[0]}</div>}
                 </div>
                 <div className="lg:col-span-4 bg-slate-900 text-white p-6 rounded-3xl shadow-xl space-y-6">
-                   <div><label className="text-xs font-black text-slate-400 block mb-1.5 flex items-center gap-2 uppercase tracking-widest"><Hash size={14} className="text-blue-400" /> JDM 系統案號</label><input type="text" className="w-full px-4 py-3 rounded-xl bg-slate-800 text-white border border-slate-700 outline-none focus:border-blue-500 font-mono font-black" value={formData.jdmControl.caseNumber} onChange={(e) => updateJdmField('caseNumber', e.target.value)} /></div>
+                   <div><label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1.5 flex items-center gap-2"><Hash size={14} className="text-blue-400" /> JDM 系統案號</label><input type="text" className="w-full px-4 py-3 rounded-xl bg-slate-800 text-white border border-slate-700 outline-none focus:border-blue-500 font-mono font-black" value={formData.jdmControl.caseNumber} onChange={(e) => updateJdmField('caseNumber', e.target.value)} /></div>
                    <div className="space-y-3"><label className="text-xs font-black text-slate-400 uppercase tracking-widest">目前進度狀態</label>
                      <div className="grid grid-cols-2 gap-3">{['提報', '結報', '抽換', '退件'].map(s => (<label key={s} onClick={() => handleStatusClick(s)} className={`p-3 rounded-xl border-2 cursor-pointer transition-all text-center font-black text-sm ${formData.jdmControl.status === s ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-lg' : 'border-slate-800 text-slate-500 hover:border-slate-700'}`}>{s}</label>))}</div>
                    </div>

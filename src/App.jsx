@@ -333,6 +333,9 @@ const App = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(true);
   const [floatingTip, setFloatingTip] = useState({ show: false, text: '' });
   const [statusConfirm, setStatusConfirm] = useState({ show: false, target: '', message: '' });
+  const [isResending, setIsResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
+  const [resendError, setResendError] = useState('');
 
   const [importStatus, setImportStatus] = useState({
     isProcessingA: false,
@@ -544,6 +547,26 @@ const App = () => {
   const isFormDirty = useMemo(() => formData.station !== '' || formData.tenant !== '' || formData.address !== '' || formData.repairItems.length > 0, [formData]);
 
   // 3. Handlers
+
+  const handleResendVerification = async () => {
+    if (!user) return;
+    setIsResending(true);
+    setResendSuccess(false);
+    setResendError('');
+    try {
+      await sendEmailVerification(user);
+      setResendSuccess(true);
+       // Hide success message after a few seconds
+      setTimeout(() => setResendSuccess(false), 5000);
+    } catch (err) {
+      setResendError('發送失敗，請稍後再試。');
+      console.error(err);
+      // Hide error message after a few seconds
+      setTimeout(() => setResendError(''), 5000);
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const showMessage = (text, type) => { setMessage({ text, type }); setTimeout(() => setMessage({ text: '', type: '' }), 5000); };
 
@@ -1264,9 +1287,25 @@ const App = () => {
         </div>
       </div>
       {!isVerified && user && (
-        <div className="mx-auto max-w-5xl bg-rose-100 text-rose-800 p-4 rounded-2xl shadow-sm border border-rose-200 flex items-center gap-3 animate-in fade-in zoom-in-95 mt-4">
-          <AlertCircle size={20} className="shrink-0" />
-          <span className="font-bold text-sm">您的 Email 尚未完成驗證，無法讀取或儲存雲端資料。請至您的信箱點擊驗證連結。</span>
+        <div className="mx-auto max-w-5xl bg-rose-100 p-4 rounded-2xl shadow-sm border border-rose-200 animate-in fade-in zoom-in-95 mt-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle size={24} className="text-rose-700 shrink-0" />
+              <div>
+                <span className="font-black text-rose-900">您的 Email 尚未完成驗證</span>
+                <p className="text-xs text-rose-800 font-bold mt-0.5">無法讀取或儲存雲端資料，請至您的信箱點擊驗證連結。</p>
+              </div>
+            </div>
+            <button 
+              onClick={handleResendVerification} 
+              disabled={isResending}
+              className="px-4 py-2 bg-rose-700 text-white rounded-lg font-black text-xs whitespace-nowrap shrink-0 hover:bg-rose-800 transition-all disabled:opacity-50 active:scale-95"
+            >
+              {isResending ? '正在發送...' : '重寄驗證信'}
+            </button>
+          </div>
+          {resendSuccess && <p className="text-emerald-700 font-bold text-xs mt-2 text-center animate-in fade-in">新的驗證信已成功發送！</p>}
+          {resendError && <p className="text-red-700 font-bold text-xs mt-2 text-center animate-in fade-in">{resendError}</p>}
         </div>
       )}
 

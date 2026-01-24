@@ -209,7 +209,7 @@ const QuickPhraseMenu = React.memo(({ onSelect, type }) => {
 
   return (
     <div className="relative inline-block shrink-0" ref={menuRef}>
-      <button type="button" onClick={() => setIsOpen(!isOpen)} className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-all text-xs font-bold border border-purple-200 whitespace-nowrap"><MessageSquare size={12} /> 快速句型</button>
+      <button type="button" onClick={() => setIsOpen(!isOpen)} className="flex items-center gap-1.5 px-3 py-1 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-all text-xs font-bold border border-purple-200 whitespace-nowrap"><MessageSquare size={12} /> 快速句型</button>
       {isOpen && (
         <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-100 text-left">
           <div className="p-2.5 bg-slate-50 border-b border-slate-100 text-xs font-black text-slate-500 uppercase tracking-widest px-4">選擇快速句型</div>
@@ -684,6 +684,7 @@ const App = () => {
           setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
         } else if (type === 'C') {
           const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+          // 日期解析引擎
           const cleanDate = (val) => {
             if (!val) return { date: '', note: '' };
             let s = String(val).trim();
@@ -704,31 +705,43 @@ const App = () => {
             const sr = {}; Object.keys(r).forEach(k => sr[String(k).replace(/[\n\r\s\u00A0\u3000]+/g, '')] = r[k]);
             const caseNoteList = [];
             const dates = {};
-            [{k:'JDM提報日期',l:'提報'},{k:'提報送件日期',l:'送件'},{k:'奉核日',l:'奉核'},{k:'結報日期',l:'結報'},{k:'結報送件日期',l:'送件'}].forEach(f => {
+            [{k:'JDM提報日期',l:'提報'},{k:'提報送件日期',l:'送件'},{k:'奉核日',l:'奉核'},{k:'結報日期',l:'結報'},{k:'結報送件日期',l:'送件'},{k:'收入發票日期',l:'發票日'}].forEach(f => {
                const {date, note} = cleanDate(sr[f.k] || sr[f.k.replace('JDM','')]);
                dates[f.k] = date; if (note) caseNoteList.push(`${f.l}: ${note}`);
             });
-            let vendor = String(sr['維修廠商'] || sr['請款廠商'] || '').trim();
-            let costVoucher = ''; const numMatch = vendor.match(/\d+/);
-            if (numMatch) { costVoucher = numMatch[0]; vendor = vendor.replace(numMatch[0], '').trim(); }
-            const preTaxPrice = Math.round((Number(sr['收入金額(稅後)']) || 0) / 1.05);
+            // 廠商與金額邏輯
+            let billingV = String(sr['請款廠商']||'').trim(); let incVoucher = '';
+            if (billingV.includes('晟晁')) { const m = billingV.match(/\d+/); if(m){ incVoucher=m[0]; billingV='晟晁'; } }
+            let costV = String(sr['維修廠商']||'').trim(); 
+            let costAmt = Number(sr['費用金額'])||0; 
+            const incAmt = Number(sr['收入金額(稅後)'])||0;
+            if(!billingV.includes('晟晁') && !costV && billingV!==''){ costV=billingV; costAmt=incAmt; }
+            let costVoucher = ''; const cM = costV.match(/\d+/);
+            if(cM){ costVoucher=cM[0]; costV=costV.replace(cM[0],'').replace(/\s+/g,' ').trim(); }
+            const preTax = Math.round(incAmt/1.05);
+
+            // 滿意度
+            let sL='', sS=null;
+            ['非常滿意','滿意','尚可','需改進','不滿意'].forEach(l=>{ if(sr[l]!==undefined&&sr[l]!==null&&sr[l]!==''){ sL=l==='尚可'?'普通':l==='需改進'?'尚須改進':l; sS=Number(sr[l]); }});
 
             return {
               ...getInitialFormState(),
-              station: String(sr['站點'] || '').trim(), address: String(sr['建物門牌地址'] || '').trim(),
-              tenant: String(sr['承租人'] || '').trim(), phone: String(sr['聯絡電話'] || '').trim(),
-              repairType: String(sr['契約內/外'] || '').includes('外') ? '2.2' : '2.1',
-              quoteTitle: String(sr['報價單標題'] || '').trim(), totalAmount: Number(sr['收入金額(稅後)']) || 0,
+              station: String(sr['站點']||'').trim(), address: String(sr['建物門牌地址']||'').trim(),
+              tenant: String(sr['承租人']||'').trim(), phone: String(sr['聯絡電話']||'').trim(),
+              repairType: String(sr['契約內/外']||'').includes('外')?'2.2':'2.1',
+              quoteTitle: String(sr['報價單標題']||'').trim(), siteDescription: String(sr['現場狀況']||'').trim(),
+              totalAmount: incAmt, satisfactionLevel: sL, satisfactionScore: sS,
+              isSubLease: ['備註','欄1','欄2'].some(k=>String(sr[k]||'').includes('包租')),
               jdmControl: {
-                caseNumber: String(sr['JDM系統案號'] || '').trim(), reportDate: dates['JDM提報日期'],
+                caseNumber: String(sr['JDM系統案號']||'').trim(), reportDate: dates['JDM提報日期'],
                 reportSubmitDate: dates['提報送件日期'], approvalDate: dates['奉核日'],
                 closeDate: dates['結報日期'], closeSubmitDate: dates['結報送件日期'],
-                status: dates['結報日期'] ? '結報' : dates['JDM提報日期'] ? '提報' : '',
+                status: dates['結報日期']?'結報':dates['JDM提報日期']?'提報':'',
                 remarks: caseNoteList.join('; '), checklist: []
               },
-              costItems: [{ id: generateUUID(), contractor: vendor, costAmount: Number(sr['費用金額']) || 0, voucherNumber: costVoucher, remarks: String(sr['費用備註'] || '').trim(), billingDate: '', workTask: String(sr['報價單標題'] || '').trim(), invoiceNumber: '' }],
-              incomeItems: [{ id: generateUUID(), source: String(sr['請款廠商'] || '晟晁').trim(), incomeAmount: Number(sr['收入金額(稅後)']) || 0, incomeVoucherNumber: '', receiveDate: '', receiptNumber: '', remarks: '' }],
-              repairItems: [{ uid: generateUUID(), name: String(sr['報價單標題'] || '').trim(), price: preTaxPrice, quantity: 1, unit: '式', isManual: true }],
+              costItems: [{ id: generateUUID(), contractor: costV, costAmount: costAmt, voucherNumber: costVoucher, remarks: String(sr['費用備註']||'').trim(), billingDate: '', workTask: String(sr['報價單標題']||'').trim(), invoiceNumber: '' }],
+              incomeItems: [{ id: generateUUID(), source: billingV, incomeAmount: incAmt, incomeVoucherNumber: incVoucher, receiveDate: dates['收入發票日期']||'', receiptNumber: String(sr['收入發票號碼']||'').trim(), remarks: '' }],
+              repairItems: [{ uid: generateUUID(), name: String(sr['報價單標題']||'').trim(), price: preTax, quantity: 1, unit: '式', isManual: true }],
               updatedAt: serverTimestamp(), createdBy: user?.uid || 'system'
             };
           });
@@ -769,6 +782,16 @@ const App = () => {
        if (exportMode === '待追蹤事項') return { "項次": index + 1, "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "報修日期": fmt(item.jdmControl?.reportDate), "故障問題描述": combinedDesc };
        else if (exportMode === '工作提報單') return { "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "故障描述": combinedDesc, "報修日": fmt(item.jdmControl?.reportDate), "完工日": fmt(item.jdmControl?.closeDate) };
        else if (exportMode === '滿意度調查') return { "JDM系統案號": String(item.jdmControl?.caseNumber || ''), "捷運站點": String(item.station || ''), "門牌": String(item.address || ''), "施工說明": combinedDesc, "滿意度分級": String(item.satisfactionLevel || '--'), "滿意度分數": item.satisfactionScore, "類別": item.repairType === '2.1' ? "契約內" : "契約外" };
+       else if (exportMode === '內控管理') {
+          // 內控邏輯
+          const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
+          const costVendor = (item.costItems || []).map(ci => ci.contractor).join(', ');
+          const costInv = (item.costItems || []).map(ci => ci.invoiceNumber).join(', ');
+          const totalInc = (item.incomeItems || []).reduce((sum, ii) => sum + (Number(ii.incomeAmount) || 0), 0);
+          const incSource = (item.incomeItems || []).map(ii => ii.source).join(', ');
+          const incInv = (item.incomeItems || []).map(ii => ii.receiptNumber).join(', ');
+          return { "案號": String(item.jdmControl?.caseNumber || ''), "地址": String(item.address || ''), "費用合計": totalCost, "維修廠商": costVendor, "費用發票": costInv, "收入合計": totalInc, "請款廠商": incSource, "收入發票": incInv };
+       }
        return null;
     }).filter(Boolean);
     const ws = window.XLSX.utils.json_to_sheet(exportData);
@@ -804,12 +827,31 @@ const App = () => {
     const script = document.createElement('script');
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; script.async = true;
     script.onload = () => setIsXlsxLoaded(true); document.body.appendChild(script);
-    const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setIsAuthReady(true); });
-    return () => unsub();
+    
+    // 白屏修復：確保 auth 存在才監聽
+    if (auth) {
+        const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setIsAuthReady(true); });
+        return () => unsub();
+    } else {
+        setConfigError(true);
+        setIsAuthReady(true);
+    }
   }, []);
 
   // --- 登入畫面 ---
   if (!isAuthReady) return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={48} /></div>;
+  
+  // 錯誤畫面：如果環境變數缺失
+  if (configError) return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
+          <div className="max-w-md w-full p-8 bg-white/10 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl">
+              <AlertTriangle className="text-rose-500 mx-auto mb-4" size={48} />
+              <h1 className="text-2xl font-black text-white mb-2">系統配置錯誤</h1>
+              <p className="text-slate-400 text-sm font-bold">無法讀取 Firebase 環境變數。請檢查 Vercel 後台設定是否正確。</p>
+          </div>
+      </div>
+  );
+
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 selection:bg-blue-500 selection:text-white">
       <div className="max-w-md w-full animate-in fade-in zoom-in-95 duration-500">
@@ -880,14 +922,14 @@ const App = () => {
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-rose-500 rounded-l-2xl"></div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">維修廠商</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.contractor} onChange={(e) => { const n = [...formData.costItems]; n[idx].contractor = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
-                    <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-400">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={14} /></button></div>
+                    <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-400">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">請款內容</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, workTask: n}); }} /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">發票 / 收據號碼</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.invoiceNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].invoiceNumber = e.target.value; setFormData({...formData, invoiceNumber: n}); }} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">請款內容</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">發票 / 收據號碼</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.invoiceNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].invoiceNumber = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">費用單號碼</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.voucherNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].voucherNumber = e.target.value; setFormData({...formData, voucherNumber: n}); }} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">費用單號碼</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.voucherNumber} onChange={(e) => { const n = [...formData.costItems]; n[idx].voucherNumber = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-black text-rose-500">費用金額(含稅)</label><input type="number" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl font-black text-rose-600`} value={item.costAmount} onChange={(e) => { const n = [...formData.costItems]; n[idx].costAmount = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
                   </div>
                   <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">備註</label><AutoResizeTextarea className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.remarks} onChange={(e) => { const n = [...formData.costItems]; n[idx].remarks = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
@@ -902,7 +944,7 @@ const App = () => {
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500 rounded-l-2xl"></div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">請款廠商</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.source} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].source = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
-                    <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-400">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiveDate} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiveDate = e.target.value; setFormData({...formData, incomeItems: n}); }} /><button onClick={() => setFormData({...formData, incomeItems: formData.incomeItems.filter(ii => ii.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={14} /></button></div>
+                    <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-400">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiveDate} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiveDate = e.target.value; setFormData({...formData, incomeItems: n}); }} /><button onClick={() => setFormData({...formData, incomeItems: formData.incomeItems.filter(ii => ii.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">契約類型</label><div className="px-3 py-2 bg-slate-50 border rounded-xl text-[10px] font-bold text-slate-500 uppercase">{formData.repairType === '2.1' ? '契約內' : '契約外'}</div></div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, addDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { 
   Search, 
@@ -299,6 +299,82 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
     </tr>
   );
 });
+
+const LoginScreen = ({ auth }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // Login successful, onAuthStateChanged will handle state update
+    } catch (err) {
+      console.error("Login error:", err);
+      let errorMessage = "登入失敗，請檢查 Email 或密碼。";
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        errorMessage = "Email 或密碼不正確。";
+      } else if (err.code === 'auth/invalid-email') {
+        errorMessage = "Email 格式不正確。";
+      } else if (err.code === 'auth/too-many-requests') {
+        errorMessage = "登入嘗試過多，請稍後再試。";
+      }
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-slate-100 p-4">
+      <div className="w-full max-w-md bg-white p-8 md:p-12 rounded-3xl shadow-2xl text-center border border-slate-200 animate-in fade-in zoom-in-95">
+        <div className="mx-auto w-fit bg-blue-100 text-blue-600 p-4 rounded-full mb-6">
+          <User size={40} />
+        </div>
+        <h1 className="text-3xl font-black text-slate-900 mb-8">登入管理系統</h1>
+        
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div>
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-5 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all text-base font-medium"
+              required
+            />
+          </div>
+          <div>
+            <input
+              type="password"
+              placeholder="密碼"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-5 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all text-base font-medium"
+              required
+            />
+          </div>
+          {error && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-xl text-sm font-bold animate-in fade-in">
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-black text-lg shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isLoading ? <Loader2 size={20} className="animate-spin" /> : '登入'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 // --- 主應用組件 ---
 
@@ -991,6 +1067,18 @@ const App = () => {
     } catch (e) { showMessage("刪除失敗", "error"); } finally { setIsDeleteModalOpen(false); setPendingDeleteId(null); }
   };
 
+  const handleLogout = async () => {
+    if (auth) {
+      try {
+        await signOut(auth);
+        showMessage("已登出", "success");
+      } catch (e) {
+        showMessage("登出失敗", "error");
+        console.error("Logout error:", e);
+      }
+    }
+  };
+
   // --- Effects ---
 
   useEffect(() => {
@@ -1000,10 +1088,8 @@ const App = () => {
     if (!firebaseConfig.apiKey) { setConfigError(true); return; }
     const initAuth = async () => { 
       if (!auth) return;
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { await signInWithCustomToken(auth, __initial_auth_token); } 
-        else { await signInAnonymously(auth); }
-      } catch (e) { console.error("Auth 初始失敗:", e); try { await signInAnonymously(auth); } catch (e2) {} }
+      // No automatic anonymous or custom token sign-in; user must explicitly log in.
+      // onAuthStateChanged will detect user status after explicit login.
     };
     initAuth();
     const unsub = onAuthStateChanged(auth, setUser);
@@ -1074,6 +1160,31 @@ const App = () => {
     else { document.body.style.overflow = 'auto'; }
     return () => { document.body.style.overflow = 'auto'; };
   }, [isCostSidebarOpen]);
+
+  if (configError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-rose-50 text-rose-700 p-4">
+        <AlertCircle size={48} />
+        <h1 className="text-2xl font-black mt-4">設定檔錯誤</h1>
+        <p className="mt-2 font-bold text-center">Firebase 環境變數 (VITE_FIREBASE_CONFIG) 缺失或格式錯誤。</p>
+        <p className="mt-1 text-sm text-center">請檢查您的 `.env` 檔案或伺服器環境變數設定。</p>
+      </div>
+    );
+  }
+
+  if (!auth) { // Firebase not initialized or auth object is null
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 text-slate-600 p-4">
+        <Loader2 size={48} className="animate-spin" />
+        <h1 className="text-2xl font-black mt-4">正在初始化 Firebase...</h1>
+        <p className="mt-2 font-bold text-center">請確認您的 Firebase 設定正確。</p>
+      </div>
+    );
+  }
+
+  if (!user) { // No user is logged in
+    return <LoginScreen auth={auth} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-800 font-sans pb-32" onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}>
@@ -1296,6 +1407,7 @@ const App = () => {
                 </div>
                 <div className="flex items-center gap-3 ml-2 border-l-2 pl-3 self-start">
                   <button onClick={handleResetClick} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><Plus size={14} /> 建立新案件</button>
+                  <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><User size={14} /> 登出</button>
                   <button onClick={handleSaveToCloud} disabled={isSaving || configError} className={`flex items-center gap-2 px-8 py-2 text-white rounded-xl font-black text-sm transition shadow-lg active:scale-95 whitespace-nowrap shrink-0 ${currentDocId ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} ${configError ? 'opacity-50 cursor-not-allowed' : ''}`}>{isSaving ? <Clock className="animate-spin" size={16} /> : <Save size={16} />} {isSaving ? '儲存中' : '儲存案件'}</button>
                 </div>
               </div>

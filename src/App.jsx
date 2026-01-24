@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, sendEmailVerification } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, addDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { 
   Search, 
@@ -42,9 +42,7 @@ import {
   Settings2,
   Edit3,
   Info,
-  History,
-  Mail,
-  RefreshCw
+  History
 } from 'lucide-react';
 
 // --- 全域輔助：UUID 生成器 ---
@@ -307,7 +305,6 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
 const App = () => {
   // 1. State Definitions
   const [user, setUser] = useState(null);
-  const isVerified = user && user.emailVerified;
   const [configError, setConfigError] = useState(false);
   const [activeView, setActiveView] = useState('editor'); 
   const [currentDocId, setCurrentDocId] = useState(null);
@@ -333,9 +330,6 @@ const App = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(true);
   const [floatingTip, setFloatingTip] = useState({ show: false, text: '' });
   const [statusConfirm, setStatusConfirm] = useState({ show: false, target: '', message: '' });
-  const [isResending, setIsResending] = useState(false);
-  const [resendSuccess, setResendSuccess] = useState(false);
-  const [resendError, setResendError] = useState('');
 
   const [importStatus, setImportStatus] = useState({
     isProcessingA: false,
@@ -547,26 +541,6 @@ const App = () => {
   const isFormDirty = useMemo(() => formData.station !== '' || formData.tenant !== '' || formData.address !== '' || formData.repairItems.length > 0, [formData]);
 
   // 3. Handlers
-
-  const handleResendVerification = async () => {
-    if (!user) return;
-    setIsResending(true);
-    setResendSuccess(false);
-    setResendError('');
-    try {
-      await sendEmailVerification(user);
-      setResendSuccess(true);
-       // Hide success message after a few seconds
-      setTimeout(() => setResendSuccess(false), 5000);
-    } catch (err) {
-      setResendError('發送失敗，請稍後再試。');
-      console.error(err);
-      // Hide error message after a few seconds
-      setTimeout(() => setResendError(''), 5000);
-    } finally {
-      setIsResending(false);
-    }
-  };
 
   const showMessage = (text, type) => { setMessage({ text, type }); setTimeout(() => setMessage({ text: '', type: '' }), 5000); };
 
@@ -1037,7 +1011,7 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!user || !db || !auth.currentUser || !user.emailVerified) return;
+    if (!user || !db || !auth.currentUser) return;
     const loadMasterData = async () => {
       setImportStatus(prev => ({ ...prev, isProcessingA: true, isProcessingB: true }));
       try {
@@ -1065,7 +1039,7 @@ const App = () => {
   }, [user, db]);
 
   useEffect(() => {
-    if (!user || !db || !hasActivatedDashboard || !user.emailVerified) return;
+    if (!user || !db || !hasActivatedDashboard) return;
     setIsLoadingDashboard(true);
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'));
     const unsub = onSnapshot(q, (snap) => { setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setIsLoadingDashboard(false); }, (error) => { console.error("案件監聽異常:", error); setIsLoadingDashboard(false); });
@@ -1268,7 +1242,7 @@ const App = () => {
             </span>
           </div>
           
-          <button onClick={handleSaveToCloud} disabled={isSaving || !isVerified} className="w-full mt-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-[0.98] shadow-lg shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">
+          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-[0.98] shadow-lg shadow-slate-200">
             {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} 立即儲存並同步雲端
           </button>
         </div>
@@ -1286,28 +1260,6 @@ const App = () => {
           </button>
         </div>
       </div>
-      {!isVerified && user && (
-        <div className="mx-auto max-w-5xl bg-rose-100 p-4 rounded-2xl shadow-sm border border-rose-200 animate-in fade-in zoom-in-95 mt-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <AlertCircle size={24} className="text-rose-700 shrink-0" />
-              <div>
-                <span className="font-black text-rose-900">您的 Email 尚未完成驗證</span>
-                <p className="text-xs text-rose-800 font-bold mt-0.5">無法讀取或儲存雲端資料，請至您的信箱點擊驗證連結。</p>
-              </div>
-            </div>
-            <button 
-              onClick={handleResendVerification} 
-              disabled={isResending}
-              className="px-4 py-2 bg-rose-700 text-white rounded-lg font-black text-xs whitespace-nowrap shrink-0 hover:bg-rose-800 transition-all disabled:opacity-50 active:scale-95"
-            >
-              {isResending ? '正在發送...' : '重寄驗證信'}
-            </button>
-          </div>
-          {resendSuccess && <p className="text-emerald-700 font-bold text-xs mt-2 text-center animate-in fade-in">新的驗證信已成功發送！</p>}
-          {resendError && <p className="text-red-700 font-bold text-xs mt-2 text-center animate-in fade-in">{resendError}</p>}
-        </div>
-      )}
 
       <div className={`mx-auto space-y-6 transition-all duration-300 ${activeView === 'dashboard' ? 'max-w-[1600px]' : 'max-w-5xl'}`}>
         {activeView === 'editor' ? (
@@ -1329,22 +1281,22 @@ const App = () => {
               </div>
               <div className="flex-1 flex flex-wrap justify-end items-center gap-3 w-full">
                 <div className="flex flex-col items-center gap-1">
-                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl cursor-pointer hover:bg-indigo-100 transition font-bold text-sm border border-indigo-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingA || !isVerified ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl cursor-pointer hover:bg-indigo-100 transition font-bold text-sm border border-indigo-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingA ? 'opacity-50 pointer-events-none' : ''}`}>
                     {importStatus.isProcessingA ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} 匯入代管清冊
-                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('A', e)} disabled={importStatus.isProcessingA || !isVerified} />
+                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('A', e)} disabled={importStatus.isProcessingA} />
                   </label>
                   {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已載入 {importStatus.fileNameA}</span>}
                 </div>
                 <div className="flex flex-col items-center gap-1">
-                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold text-sm border border-emerald-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingB || !isVerified ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold text-sm border border-emerald-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingB ? 'opacity-50 pointer-events-none' : ''}`}>
                     {importStatus.isProcessingB ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />} 匯入價目表
-                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('B', e)} disabled={importStatus.isProcessingB || !isVerified} />
+                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('B', e)} disabled={importStatus.isProcessingB} />
                   </label>
                   {importStatus.hasImportedB && !importStatus.isProcessingB && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已同步雲端價目表</span>}
                 </div>
                 <div className="flex items-center gap-3 ml-2 border-l-2 pl-3 self-start">
                   <button onClick={handleResetClick} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><Plus size={14} /> 建立新案件</button>
-                  <button onClick={handleSaveToCloud} disabled={isSaving || configError || !isVerified} className={`flex items-center gap-2 px-8 py-2 text-white rounded-xl font-black text-sm transition shadow-lg active:scale-95 whitespace-nowrap shrink-0 ${currentDocId ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} ${configError || !isVerified ? 'opacity-50 cursor-not-allowed' : ''}`}>{isSaving ? <Clock className="animate-spin" size={16} /> : <Save size={16} />} {isSaving ? '儲存中' : '儲存案件'}</button>
+                  <button onClick={handleSaveToCloud} disabled={isSaving || configError} className={`flex items-center gap-2 px-8 py-2 text-white rounded-xl font-black text-sm transition shadow-lg active:scale-95 whitespace-nowrap shrink-0 ${currentDocId ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} ${configError ? 'opacity-50 cursor-not-allowed' : ''}`}>{isSaving ? <Clock className="animate-spin" size={16} /> : <Save size={16} />} {isSaving ? '儲存中' : '儲存案件'}</button>
                 </div>
               </div>
             </div>
@@ -1546,9 +1498,9 @@ const App = () => {
                   </div>
                   <div className="flex items-center xl:ml-auto shrink-0 group">
                     <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
-                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC || !isVerified ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}>
                         {importStatus.isProcessingC ? <Loader2 size={14} className="animate-spin" /> : <History size={14} />} 匯入歷史案件
-                        <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload('C', e)} disabled={importStatus.isProcessingC || !isVerified} />
+                        <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload('C', e)} disabled={importStatus.isProcessingC} />
                       </label>
                     </div>
                     <div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button>

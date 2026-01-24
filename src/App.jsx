@@ -86,7 +86,7 @@ const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
   }
-  // 嘗試讀取 Vite 環境變數 (Vercel)
+  // 嘗試讀取 Vite 環境變數 (Vercel 生產環境)
   try {
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_FIREBASE_CONFIG) {
         return JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
@@ -612,7 +612,7 @@ const App = () => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) { showMessage("請輸入帳號與密碼", "error"); return; }
     setIsLoggingIn(true);
-    setLoginErrorDetail(''); // 清空舊代碼
+    setLoginErrorDetail(''); 
     try {
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
       showMessage("登入成功", "success");
@@ -684,7 +684,6 @@ const App = () => {
           setImportStatus(prev => ({ ...prev, isProcessingB: false, hasImportedB: true }));
         } else if (type === 'C') {
           const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-          // 日期解析引擎還原
           const cleanDate = (val) => {
             if (!val) return { date: '', note: '' };
             let s = String(val).trim();
@@ -709,7 +708,6 @@ const App = () => {
                const {date, note} = cleanDate(sr[f.k] || sr[f.k.replace('JDM','')]);
                dates[f.k] = date; if (note) caseNoteList.push(`${f.l}: ${note}`);
             });
-            // 廠商編號分離還原
             let vendor = String(sr['維修廠商'] || sr['請款廠商'] || '').trim();
             let costVoucher = ''; const numMatch = vendor.match(/\d+/);
             if (numMatch) { costVoucher = numMatch[0]; vendor = vendor.replace(numMatch[0], '').trim(); }
@@ -763,9 +761,6 @@ const App = () => {
     } catch (e) { showMessage("儲存失敗", "error"); } finally { setIsSaving(false); }
   };
 
-  const executeReset = () => { setFormData(getInitialFormState()); setCurrentDocId(null); setIsResetModalOpen(false); setIsManualMode(false); setActiveView('editor'); window.scrollTo({ top: 0, behavior: 'smooth' }); showMessage("已重設案件", "success"); };
-  const handleResetClick = () => (currentDocId || isFormDirty) ? setIsResetModalOpen(true) : executeReset();
-
   const handleExportExcel = () => {
     if (!window.XLSX) return;
     const fmt = (d) => String(d||'').replace(/-/g,'/');
@@ -773,6 +768,7 @@ const App = () => {
        const combinedDesc = `${String(item.siteDescription || '').trim()} ${String(item.constructionDesc1 || '').trim()}`.trim();
        if (exportMode === '待追蹤事項') return { "項次": index + 1, "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "報修日期": fmt(item.jdmControl?.reportDate), "故障問題描述": combinedDesc };
        else if (exportMode === '工作提報單') return { "案號": String(item.jdmControl?.caseNumber || ''), "站別": String(item.station || ''), "地址": String(item.address || ''), "故障描述": combinedDesc, "報修日": fmt(item.jdmControl?.reportDate), "完工日": fmt(item.jdmControl?.closeDate) };
+       else if (exportMode === '滿意度調查') return { "JDM系統案號": String(item.jdmControl?.caseNumber || ''), "捷運站點": String(item.station || ''), "門牌": String(item.address || ''), "施工說明": combinedDesc, "滿意度分級": String(item.satisfactionLevel || '--'), "滿意度分數": item.satisfactionScore, "類別": item.repairType === '2.1' ? "契約內" : "契約外" };
        return null;
     }).filter(Boolean);
     const ws = window.XLSX.utils.json_to_sheet(exportData);
@@ -781,11 +777,8 @@ const App = () => {
     window.XLSX.writeFile(wb, `${exportMode}_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
-  const toggleManualMode = () => {
-    if (isManualMode) { setFormData(prev => ({ ...prev, station: '', address: '', tenant: '', phone: '', isSubLease: false })); setSearchSheet(''); setSearchAddress(''); showMessage("已關閉手動模式", "success"); }
-    else { showMessage("已切換至手動填寫模式", "success"); }
-    setIsManualMode(!isManualMode);
-  };
+  const executeReset = () => { setFormData(getInitialFormState()); setCurrentDocId(null); setIsResetModalOpen(false); setIsManualMode(false); setActiveView('editor'); window.scrollTo({ top: 0, behavior: 'smooth' }); showMessage("已重設案件", "success"); };
+  const handleResetClick = () => (currentDocId || isFormDirty) ? setIsResetModalOpen(true) : executeReset();
 
   const handleEditCaseInternal = useCallback((item) => {
     const sanitizedCase = { 
@@ -847,8 +840,6 @@ const App = () => {
                <button type="submit" disabled={isLoggingIn} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg flex items-center justify-center gap-3 transition-all hover:bg-blue-500 active:scale-95 disabled:opacity-50">
                  {isLoggingIn ? <Loader2 className="animate-spin" size={20} /> : <ShieldCheck size={20} />} {isLoggingIn ? "驗證中..." : "安全登入"}
                </button>
-
-               {/* 診斷代碼顯示 */}
                {loginErrorDetail && (
                  <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl animate-in slide-in-from-top-2">
                    <div className="flex gap-3">
@@ -889,7 +880,7 @@ const App = () => {
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-rose-500 rounded-l-2xl"></div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">維修廠商</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.contractor} onChange={(e) => { const n = [...formData.costItems]; n[idx].contractor = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
-                    <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-400">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button></div>
+                    <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-400">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={14} /></button></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">請款內容</label><input className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.workTask} onChange={(e) => { const n = [...formData.costItems]; n[idx].workTask = e.target.value; setFormData({...formData, workTask: n}); }} /></div>
@@ -902,7 +893,7 @@ const App = () => {
                   <div className="space-y-1"><label className="text-[10px] font-black text-slate-400">備註</label><AutoResizeTextarea className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.remarks} onChange={(e) => { const n = [...formData.costItems]; n[idx].remarks = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
                 </div>
               ))}
-              <button onClick={() => setFormData({...formData, costItems: [...formData.costItems, { id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }]})} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-rose-400 transition-all">+ 新增費用細目</button>
+              <button onClick={() => setFormData({...formData, costItems: [...formData.costItems, { id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }]})} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-rose-400 transition-all">+ 新增費用明細</button>
             </div>
           ) : (
             <div className="space-y-4 pb-24">
@@ -943,7 +934,7 @@ const App = () => {
         </div>
       </div>
 
-      {/* 導覽頁籤 */}
+      {/* 導覽與主體介面 */}
       <div className={`mx-auto mb-6 transition-all duration-300 ${activeView === 'dashboard' ? 'max-w-[1600px]' : 'max-w-5xl'}`}>
         <div className="bg-slate-900 rounded-3xl p-1.5 flex shadow-2xl shadow-slate-200 relative">
           <button onClick={() => setActiveView('editor')} className={`flex-1 py-3 px-6 rounded-2xl text-sm font-black transition-all flex items-center justify-center gap-3 ${activeView === 'editor' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}>
@@ -952,7 +943,7 @@ const App = () => {
           <button onClick={() => { setActiveView('dashboard'); setHasActivatedDashboard(true); }} className={`flex-1 py-3 px-6 rounded-2xl text-sm font-black transition-all flex items-center justify-center gap-3 ${activeView === 'dashboard' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:text-white'}`}>
             <LayoutDashboard size={16} /> 案件管理中心
           </button>
-          <button onClick={handleLogout} className="absolute -right-16 top-1/2 -translate-y-1/2 p-4 bg-slate-800 text-slate-400 rounded-2xl hover:text-rose-400 transition-all active:scale-9 group" title="登出系統">
+          <button onClick={handleLogout} className="absolute -right-16 top-1/2 -translate-y-1/2 p-4 bg-slate-800 text-slate-400 rounded-2xl hover:text-rose-400 group" title="登出系統">
             <LogOut size={20} className="group-hover:rotate-180 transition-transform duration-500" />
           </button>
         </div>
@@ -966,7 +957,7 @@ const App = () => {
                 <div className={`p-3 rounded-2xl shadow-lg bg-blue-600`}><Database className="text-white" size={24} /></div>
                 <div className="flex flex-col">
                   <h1 className="text-xl font-black text-slate-900 tracking-tight">{currentDocId ? '編輯現有案件' : '建立新修繕單'}</h1>
-                  <span className="text-[11px] font-black text-slate-500">已登入：{user.email}</span>
+                  <span className="text-[11px] font-black text-slate-500">管理員：{user.email}</span>
                 </div>
               </div>
               <div className="flex flex-wrap justify-end gap-3 w-full">
@@ -1012,7 +1003,7 @@ const App = () => {
               </div>
             </div>
 
-            {/* 2. 修繕清單區 */}
+            {/* 2. 修繕項目與費用 */}
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
                <div className="flex justify-between items-center border-b pb-2"><h2 className="text-base font-black text-blue-800 uppercase tracking-widest">2. 修繕項目與費用</h2>
                <select className={`text-xs p-2 border rounded-xl font-black ${formData.repairItems.length > 0 ? 'bg-slate-100' : 'bg-white'}`} value={formData.repairType} onChange={(e) => updateFormField('repairType', e.target.value)} disabled={formData.repairItems.length > 0}><option value="2.1">契約內</option><option value="2.2">契約外</option></select></div>
@@ -1051,27 +1042,27 @@ const App = () => {
                </div></div>
             </div>
 
-            {/* 3. 提報與結報詳細內容區 */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
-                <h2 className="text-base font-black text-blue-800 border-b pb-2">3. 提報</h2>
-                <div className="space-y-4">
-                  <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500">現場現況</label><button onClick={(e) => copyToClipboard(formData.siteDescription, e)} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black border border-blue-100 hover:bg-blue-100 transition-all">複製</button></div><AutoResizeTextarea value={formData.siteDescription} onChange={(e) => updateFormField('siteDescription', e.target.value)} className="w-full p-4 rounded-2xl bg-white" rows={3} /></div>
-                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500">施工說明一 (原因/方式)</label><AutoResizeTextarea value={formData.constructionDesc1} onChange={(e) => updateFormField('constructionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
-                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2">施工說明二 (提報文件) <QuickPhraseMenu onSelect={(p) => updateFormField('constructionDesc2', p)} type="report" /></label><AutoResizeTextarea value={formData.constructionDesc2} onChange={(e) => updateFormField('constructionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
-                </div>
+            {/* 3. 提報 */}
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
+              <h2 className="text-base font-black text-blue-800 border-b pb-2">3. 提報</h2>
+              <div className="space-y-4">
+                <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500">現場現況</label><button onClick={(e) => copyToClipboard(formData.siteDescription, e)} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black border border-blue-100 hover:bg-blue-100 transition-all">複製</button></div><AutoResizeTextarea value={formData.siteDescription} onChange={(e) => updateFormField('siteDescription', e.target.value)} className="w-full p-4 rounded-2xl bg-white" rows={3} /></div>
+                <div className="space-y-1.5"><label className="text-xs font-black text-slate-500">施工說明一 (原因/方式)</label><AutoResizeTextarea value={formData.constructionDesc1} onChange={(e) => updateFormField('constructionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
+                <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2">施工說明二 (提報文件) <QuickPhraseMenu onSelect={(p) => updateFormField('constructionDesc2', p)} type="report" /></label><AutoResizeTextarea value={formData.constructionDesc2} onChange={(e) => updateFormField('constructionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
               </div>
-              <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
-                <h2 className="text-base font-black text-emerald-800 border-b pb-2">4. 結報</h2>
-                <div className="space-y-4">
-                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500">完工說明一 (成果)</label><AutoResizeTextarea value={formData.completionDesc1} onChange={(e) => updateFormField('completionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
-                  <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2">完工說明二 (結報文件) <QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" /></label><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
-                  <div className="pt-4 border-t border-slate-50">
-                    <label className="text-xs font-black text-slate-600 block mb-4">客戶滿意度調查</label>
-                    <div className="grid grid-cols-3 gap-3">{SATISFACTION_LEVELS.map(level => (
-                      <label key={level.label} onClick={(e) => { e.preventDefault(); const isS = formData.satisfactionLevel === level.label; setFormData(p => ({ ...p, satisfactionLevel: isS ? '' : level.label, satisfactionScore: isS ? null : level.score })); }} className={`cursor-pointer p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 h-20 transition-all ${formData.satisfactionLevel === level.label ? `${level.borderColor} ${level.bgColor} ring-2` : 'bg-white border-slate-100 hover:border-slate-300'}`}><div className={`w-3.5 h-3.5 rounded-full border-2 ${formData.satisfactionLevel === level.label ? level.color : 'border-slate-300'}`}></div><div className="text-[11px] font-black text-center">{level.label}</div></label>
-                    ))}</div>
-                  </div>
+            </div>
+
+            {/* 4. 結報 */}
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
+              <h2 className="text-base font-black text-emerald-800 border-b pb-2">4. 結報</h2>
+              <div className="space-y-4">
+                <div className="space-y-1.5"><label className="text-xs font-black text-slate-500">完工說明一 (成果)</label><AutoResizeTextarea value={formData.completionDesc1} onChange={(e) => updateFormField('completionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
+                <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 flex items-center gap-2">完工說明二 (結報文件) <QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" /></label><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" /></div>
+                <div className="pt-4 border-t border-slate-50">
+                  <label className="text-xs font-black text-slate-600 block mb-4">客戶滿意度調查</label>
+                  <div className="grid grid-cols-3 gap-3">{SATISFACTION_LEVELS.map(level => (
+                    <label key={level.label} onClick={(e) => { e.preventDefault(); const isS = formData.satisfactionLevel === level.label; setFormData(p => ({ ...p, satisfactionLevel: isS ? '' : level.label, satisfactionScore: isS ? null : level.score })); }} className={`cursor-pointer p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 h-20 transition-all ${formData.satisfactionLevel === level.label ? `${level.borderColor} ${level.bgColor} ring-2` : 'bg-white border-slate-100 hover:border-slate-300'}`}><div className={`w-3.5 h-3.5 rounded-full border-2 ${formData.satisfactionLevel === level.label ? level.color : 'border-slate-300'}`}></div><div className="text-[11px] font-black text-center">{level.label}</div></label>
+                  ))}</div>
                 </div>
               </div>
             </div>

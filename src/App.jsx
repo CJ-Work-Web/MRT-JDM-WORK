@@ -590,10 +590,9 @@ const App = () => {
       );
     }
     if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
-    if (dashboardFilter.status !== '全部') {
-      if (dashboardFilter.status === '待提報') filtered = filtered.filter(c => !c.jdmControl?.status);
-      else if (dashboardFilter.status === '未完成案件 (全部)') filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
-      else filtered = filtered.filter(c => c.jdmControl?.status === dashboardFilter.status);
+    // Server-side filtering is now active for status. Only handle special client-side cases here.
+    if (dashboardFilter.status === '未完成案件 (全部)') {
+      filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
     }
     if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
       const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
@@ -1135,8 +1134,17 @@ const App = () => {
     setIsLoadingDashboard(true);
     
     try {
-      // Reverting to the simplest possible query to ensure stability.
-      const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'));
+      let casesRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
+      let q = query(casesRef); // Base query
+
+      // Step 1: Cautiously apply server-side filtering for status only.
+      if (dashboardFilter.status && dashboardFilter.status !== '全部' && dashboardFilter.status !== '未完成案件 (全部)') {
+          if (dashboardFilter.status === '待提報') {
+              q = query(q, where('jdmControl.status', '==', ''));
+          } else {
+              q = query(q, where('jdmControl.status', '==', dashboardFilter.status));
+          }
+      }
       
       const unsub = onSnapshot(q, (snap) => {
         setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -1156,7 +1164,7 @@ const App = () => {
       setIsLoadingDashboard(false);
       setAllCases([]);
     }
-  }, [user, db, hasActivatedDashboard]);
+  }, [user, db, hasActivatedDashboard, dashboardFilter]);
 
   useEffect(() => { const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300); return () => clearTimeout(t); }, [searchAddress]);
 

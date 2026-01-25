@@ -237,11 +237,64 @@ const InfoCard = ({ icon: Icon, label, value, colorClass, onCopy, fullWidth = fa
 );
 
 const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
-  // All complex logic is temporarily removed for debugging.
+  const status = String(item.jdmControl?.status || '');
+  const reportDate = String(item.jdmControl?.reportDate || '');
+  const checklist = (item.jdmControl && Array.isArray(item.jdmControl.checklist)) ? item.jdmControl.checklist : [];
+  const isMissingApproval = status === '結報' && !item.jdmControl?.approvalDate && item.repairType !== '2.1';
+  
+  const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
+
   return (
-    <tr>
-      <td colSpan="8" className="p-4 text-slate-500">
-        [偵錯] 正在渲染案件 ID: {item?.id || 'NO ID'}
+    <tr className="hover:bg-slate-50/50 group transition-colors border-b last:border-none border-slate-100 text-[11px] md:text-xs">
+      <td className="p-2 text-center">
+        <span className={`px-2 py-0.5 rounded-full font-black inline-flex justify-center shadow-sm whitespace-nowrap w-20 ${!status ? 'bg-slate-100 text-slate-500' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+          {status || '待提報'}
+        </span>
+      </td>
+      <td className="p-2 text-center">
+        <div className="text-slate-600 font-mono font-black whitespace-nowrap">
+          {reportDate || '--'}
+        </div>
+      </td>
+      <td className="p-2">
+        <div className="text-slate-900 font-black truncate max-w-full">{String(item.jdmControl?.caseNumber || '未編號')}</div>
+        <div className="font-bold text-[9px] text-slate-500 mt-0.5 uppercase truncate">{String(item.station || '未知')}</div>
+      </td>
+      <td className="p-2">
+        <div className="font-black text-slate-900 truncate max-w-full">{String(item.tenant || '--')}</div>
+        <div className="text-[9px] text-slate-500 mt-0.5 truncate leading-relaxed font-bold" title={String(item.address || '')}>{String(item.address || '無地址')}</div>
+      </td>
+      <td className="p-2">
+        <div className="font-bold text-slate-600 truncate leading-relaxed max-w-full" title={String(item.quoteTitle || '')}>
+          {String(item.quoteTitle || '--')}
+        </div>
+      </td>
+      <td className="p-2 text-right">
+        <div className="font-mono font-black text-rose-600 whitespace-nowrap">
+          ${totalCost.toLocaleString()}
+        </div>
+      </td>
+      <td className="p-2">
+        <div className="flex flex-wrap gap-1">
+          {isMissingApproval && (
+            <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 border border-orange-200 rounded text-[9px] font-black whitespace-nowrap animate-pulse">缺奉核日</span>
+          )}
+          {checklist.length > 0 ? (
+            checklist.map(id => (
+              <span key={id} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 border border-orange-100 rounded text-[9px] font-black whitespace-nowrap">
+                {String(CHECKLIST_MAP[id] || id)}
+              </span>
+            ))
+          ) : (
+            !isMissingApproval && <span className="font-black text-emerald-600 flex items-center gap-1.5 whitespace-nowrap"><CheckCircle size={10} /> 資料齊備</span>
+          )}
+        </div>
+      </td>
+      <td className="p-2 text-center">
+        <div className="flex items-center justify-center gap-2">
+          <button onClick={() => onEdit(item)} className="p-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700 shadow-sm transition-all active:scale-95 shrink-0"><ExternalLink size={14} /></button>
+          <button onClick={() => onDelete(item.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors shrink-0"><Trash2 size={14} /></button>
+        </div>
       </td>
     </tr>
   );
@@ -536,75 +589,31 @@ const App = () => {
         (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))
       );
     }
-  const dashboardResults = useMemo(() => {
-    try {
-      console.log("[Debug] Recalculating dashboardResults...");
-      if (!isDashboardSearchActive) {
-        console.log("[Debug] Not active, returning [].");
-        return [];
-      }
-      
-      let filtered = [...allCases];
-      console.log(`[Debug] Starting with ${filtered.length} cases.`);
-
-      if (dashboardFilter.search) {
-        const s = dashboardFilter.search.toLowerCase();
-        filtered = filtered.filter(c => 
-          (String(c.address || '')).toLowerCase().includes(s) || 
-          (String(c.tenant || '')).toLowerCase().includes(s) || 
-          (String(c.station || '')).toLowerCase().includes(s) || 
-          (String(c.jdmControl?.caseNumber || '')).toLowerCase().includes(s) ||
-          (String(c.quoteTitle || '')).toLowerCase().includes(s) || 
-          (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))
-        );
-        console.log(`[Debug] After search filter: ${filtered.length} cases.`);
-      }
-      
-      if (dashboardFilter.stations.length > 0) {
-        filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
-        console.log(`[Debug] After stations filter: ${filtered.length} cases.`);
-      }
-
-      if (dashboardFilter.status !== '全部') {
-        if (dashboardFilter.status === '待提報') filtered = filtered.filter(c => !c.jdmControl?.status);
-        else if (dashboardFilter.status === '未完成案件 (全部)') filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
-        else filtered = filtered.filter(c => c.jdmControl?.status === dashboardFilter.status);
-        console.log(`[Debug] After status filter ('${dashboardFilter.status}'): ${filtered.length} cases.`);
-      }
-
-      if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
-        const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
-        switch (dashboardFilter.specialFormula) {
-          case '本期已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && (cD >= rM && cD <= (cM + '-31')) && status === '結報' && type === '2.2'; }); break;
-          case '前期已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return (rD !== '' && rD < rM) && (cD >= rM && cD <= (cM + '-31')) && status === '結報' && type === '2.2'; }); break;
-          case '本期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && !cD && status === '提報' && type === '2.2'; }); break;
-          case '前期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return (rD !== '' && rD < rM) && !cD && status === '提報' && type === '2.2'; }); break;
-          case '約內已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && cD.startsWith(cM) && status === '結報' && type === '2.1'; }); break;
-          case '內控管理': filtered = filtered.filter(c => { 
-            const rD = String(c.jdmControl?.reportDate || ''); 
-            const cD = String(c.jdmControl?.closeDate || ''); 
-            return (rD >= rM) && (cD >= rM && cD <= (cM + '-31')); 
-          }); break;
-        }
-        console.log(`[Debug] After specialFormula filter ('${dashboardFilter.specialFormula}'): ${filtered.length} cases.`);
-      } else {
-        if (dashboardFilter.reportMonth) {
-          filtered = filtered.filter(c => String(c.jdmControl?.reportDate || '').startsWith(dashboardFilter.reportMonth));
-          console.log(`[Debug] After reportMonth filter: ${filtered.length} cases.`);
-        }
-        if (dashboardFilter.closeMonth) {
-          filtered = filtered.filter(c => String(c.jdmControl?.closeDate || '').startsWith(dashboardFilter.closeMonth));
-          console.log(`[Debug] After closeMonth filter: ${filtered.length} cases.`);
-        }
-      }
-
-      console.log("[Debug] Sorting results.");
-      return filtered.sort((a, b) => { const dA = String(a.jdmControl?.reportDate || '9999-99-99'); const dB = String(b.jdmControl?.reportDate || '9999-99-99'); return dA.localeCompare(dB); });
-    } catch (error) {
-      console.error("[Debug] CRASH inside dashboardResults useMemo:", error);
-      setQueryError("在篩選資料時發生嚴重錯誤，請檢查開發人員工具中的日誌。");
-      return [];
+    if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
+    if (dashboardFilter.status !== '全部') {
+      if (dashboardFilter.status === '待提報') filtered = filtered.filter(c => !c.jdmControl?.status);
+      else if (dashboardFilter.status === '未完成案件 (全部)') filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
+      else filtered = filtered.filter(c => c.jdmControl?.status === dashboardFilter.status);
     }
+    if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
+      const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
+      switch (dashboardFilter.specialFormula) {
+        case '本期已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && (cD >= rM && cD <= (cM + '-31')) && status === '結報' && type === '2.2'; }); break;
+        case '前期已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return (rD !== '' && rD < rM) && (cD >= rM && cD <= (cM + '-31')) && status === '結報' && type === '2.2'; }); break;
+        case '本期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && !cD && status === '提報' && type === '2.2'; }); break;
+        case '前期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return (rD !== '' && rD < rM) && !cD && status === '提報' && type === '2.2'; }); break;
+        case '約內已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && cD.startsWith(cM) && status === '結報' && type === '2.1'; }); break;
+        case '內控管理': filtered = filtered.filter(c => { 
+          const rD = String(c.jdmControl?.reportDate || ''); 
+          const cD = String(c.jdmControl?.closeDate || ''); 
+          return (rD >= rM) && (cD >= rM && cD <= (cM + '-31')); 
+        }); break;
+      }
+    } else {
+      if (dashboardFilter.reportMonth) filtered = filtered.filter(c => String(c.jdmControl?.reportDate || '').startsWith(dashboardFilter.reportMonth));
+      if (dashboardFilter.closeMonth) filtered = filtered.filter(c => String(c.jdmControl?.closeDate || '').startsWith(dashboardFilter.closeMonth));
+    }
+    return filtered.sort((a, b) => { const dA = String(a.jdmControl?.reportDate || '9999-99-99'); const dB = String(b.jdmControl?.reportDate || '9999-99-99'); return dA.localeCompare(dB); });
   }, [allCases, dashboardFilter, isDashboardSearchActive]);
     if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
       const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
@@ -1671,21 +1680,7 @@ const App = () => {
               ) : !isDashboardSearchActive ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>
               ) : (
-                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.map((it) => {
-                  try {
-                    return <MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />;
-                  } catch (e) {
-                    console.error("[Debug] CRASH rendering MemoizedRepairRow. Offending item:", it);
-                    console.error("[Debug] Render error:", e);
-                    return (
-                      <tr key={it?.id || Math.random()}>
-                        <td colSpan="8" className="p-4 bg-rose-100 text-rose-700 font-bold">
-                          此行案件資料毀損，無法渲染。請檢查主控台(Console)中的錯誤日誌。案件 ID: {it?.id || '未知'}
-                        </td>
-                      </tr>
-                    );
-                  }
-                }))}</tbody></table><div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
+                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table><div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
               )}
             </div>
           </div>

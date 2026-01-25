@@ -1051,7 +1051,7 @@ const App = () => {
         let changesCount = 0;
         let reportLog = "站點名稱校正報告：\n-----------------------\n";
 
-        const normalize = (str) => String(str || '').trim().replace(/[()（）-_ ,.\s]|站/g, '').toUpperCase();
+        const normalize = (str) => String(str || '').trim().replace(/[()（）_ ,.\s-]|站/g, '').toUpperCase();
         
         const correctSheetNamesMap = new Map(sheetNames.map(name => [normalize(name), name]));
 

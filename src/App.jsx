@@ -421,7 +421,7 @@ const App = () => {
 
   const [dashboardFilter, setDashboardFilter] = useState({ 
     search: '', 
-    status: '未完成案件 (全部)', 
+    status: '未完成案件', 
     stations: [],
     reportMonth: '',
     closeMonth: '',
@@ -1135,8 +1135,8 @@ const App = () => {
       let q = query(casesRef); // Base query
 
       // Apply server-side filtering for status.
-      if (dashboardFilter.status) { // A status filter is selected
-          if (dashboardFilter.status === '未完成案件 (全部)') {
+      if (dashboardFilter.status && dashboardFilter.status !== '全部') { // If status is selected AND not '全部'
+          if (dashboardFilter.status === '未完成案件') { // Updated name
               q = query(q, where('jdmControl.status', 'in', ['', '提報', '抽換', '退件']));
           } else if (dashboardFilter.status === '待提報') {
               q = query(q, where('jdmControl.status', '==', ''));
@@ -1631,7 +1631,7 @@ const App = () => {
                     {isStationDropdownOpen && (<div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-[20px] shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100 p-3"><div className="flex items-center justify-between p-2 border-b mb-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">站點篩選</span><div className="flex gap-3"><button onClick={() => setDashboardFilter({...dashboardFilter, stations: availableStations})} className="text-xs font-black text-blue-600 hover:underline whitespace-nowrap">全選</button><button onClick={() => setDashboardFilter({...dashboardFilter, stations: []})} className="text-xs font-black text-slate-500 hover:underline whitespace-nowrap">清除</button></div></div><div className="max-h-80 overflow-y-auto space-y-1 custom-scrollbar">{availableStations.map(st => { const isChecked = dashboardFilter.stations.includes(st); return (<button key={st} onClick={() => { const s = dashboardFilter.stations.includes(st) ? dashboardFilter.stations.filter(x=>x!==st) : [...dashboardFilter.stations, st]; setDashboardFilter({...dashboardFilter, stations: s}); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${isChecked ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}><div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>{isChecked && <Check size={12} className="text-white" strokeWidth={4} />}</div><span className="truncate text-left flex-1 text-xs">{String(st)}</span></button>); })}</div></div>)}
                   </div>
                   <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[160px] sm:min-w-[200px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}>
-<option>未完成案件 (全部)</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
+<option>未完成案件</option><option>全部</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
                   <div className="relative shrink-0" ref={specialSearchRef}>
                     <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>
                     {isSpecialSearchOpen && (

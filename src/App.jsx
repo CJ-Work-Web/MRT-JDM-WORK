@@ -436,6 +436,7 @@ const App = () => {
   const [isStationDropdownOpen, setIsStationDropdownOpen] = useState(false);
   const stationDropdownRef = useRef(null);
   const [isCostSidebarOpen, setIsCostSidebarOpen] = useState(false);
+  const [displayLimit, setDisplayLimit] = useState(100);
   
   const [formData, setFormData] = useState(getInitialFormState());
   const lastChangedField = useRef(null);
@@ -1674,10 +1675,21 @@ const App = () => {
                     <h3 className="text-xl font-black mt-4">資料庫查詢失敗</h3>
                     <p className="mt-2 font-bold max-w-lg">{queryError}</p>
                 </div>
-              ) : !isDashboardSearchActive ? (
+              ) : !hasActivatedDashboard ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>
               ) : (
-                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table><div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
+                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.slice(0, displayLimit).map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table>
+                  {dashboardResults.length > displayLimit && (
+                    <div className="p-4 text-center border-t border-slate-100">
+                      <button 
+                        onClick={() => setDisplayLimit(prev => prev + 100)}
+                        className="px-6 py-3 bg-slate-100 text-slate-700 font-black text-sm rounded-xl hover:bg-slate-200 transition-all"
+                      >
+                        顯示更多 (目前 {displayLimit} / {dashboardResults.length})
+                      </button>
+                    </div>
+                  )}
+                <div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
               )}
             </div>
           </div>

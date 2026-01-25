@@ -407,6 +407,8 @@ const App = () => {
   const [floatingTip, setFloatingTip] = useState({ show: false, text: '' });
   const [statusConfirm, setStatusConfirm] = useState({ show: false, target: '', message: '' });
 
+  const [queryError, setQueryError] = useState(null);
+
   const [importStatus, setImportStatus] = useState({
     isProcessingA: false,
     isProcessingB: false,
@@ -574,11 +576,12 @@ const App = () => {
   }, [debouncedSearchAddress, flattenedAddressData, formData.station]);
 
   const dashboardResults = useMemo(() => {
-    // allCases now contains results already filtered by server for basic status, stations, and one date range (if applicable).
+    // allCases now contains results already filtered by the server for status and stations.
     let filtered = [...allCases];
 
-    // Client-side filtering for complex conditions:
-    // 1. Multi-field text search (not easily done on Firestore server-side)
+    // --- Client-Side Filtering for remaining complex conditions ---
+
+    // 1. Multi-field text search
     if (dashboardFilter.search) {
       const s = dashboardFilter.search.toLowerCase();
       filtered = filtered.filter(c =>
@@ -591,15 +594,12 @@ const App = () => {
       );
     }
 
-    // 2. "未完成案件 (全部)" status (negative condition, hard to query efficiently in Firestore)
-    //    Also, if server-side status filter is '待提報', '提報', '抽換', '退件', '結報', it means dashboardFilter.status is NOT '全部' and NOT '未完成案件 (全部)'
-    //    So we only need to apply this client-side filter if dashboardFilter.status is specifically '未完成案件 (全部)'
+    // 2. "未完成案件 (全部)" status (negative condition)
     if (dashboardFilter.status === '未完成案件 (全部)') {
       filtered = filtered.filter(c => String(c.jdmControl?.status || '') !== '結報');
     }
-    // Note: '待提報' is now handled server-side as status == ''
 
-    // 3. Special Formulas (complex logic involving multiple fields and date ranges, or conditions like '< rM')
+    // 3. Date-based filtering (Special Formulas or simple month ranges)
     if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
       const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
       switch (dashboardFilter.specialFormula) {
@@ -614,10 +614,19 @@ const App = () => {
           return (rD >= rM) && (cD >= rM && cD <= (cM + '-31'));
         }); break;
       }
+    } else {
+      // Re-adding simple month filtering on the client side
+      if (dashboardFilter.reportMonth) {
+        filtered = filtered.filter(c => String(c.jdmControl?.reportDate || '').startsWith(dashboardFilter.reportMonth));
+      }
+      if (dashboardFilter.closeMonth) {
+        filtered = filtered.filter(c => String(c.jdmControl?.closeDate || '').startsWith(dashboardFilter.closeMonth));
+      }
     }
-    // Sorting is also important
+
+    // Final sorting of the results
     return filtered.sort((a, b) => { const dA = String(a.jdmControl?.reportDate || '9999-99-99'); const dB = String(b.jdmControl?.reportDate || '9999-99-99'); return dA.localeCompare(dB); });
-  }, [allCases, dashboardFilter, isDashboardSearchActive]);
+  }, [allCases, dashboardFilter]);
 
   const isFormDirty = useMemo(() => formData.station !== '' || formData.tenant !== '' || formData.address !== '' || formData.repairItems.length > 0, [formData]);
 
@@ -1133,61 +1142,56 @@ const App = () => {
 
   useEffect(() => {
     if (!user || !db || !hasActivatedDashboard) return;
+
+    setQueryError(null); // Clear previous errors on a new attempt
     setIsLoadingDashboard(true);
+
     let casesRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
-    let q = query(casesRef); // Base query
+    // Start with a default ordering. This is good practice.
+    let q = query(casesRef, orderBy('jdmControl.reportDate', 'asc'));
 
-    // Apply status filter
-    if (dashboardFilter.status && dashboardFilter.status !== '全部' && dashboardFilter.status !== '未完成案件 (全部)') {
-        if (dashboardFilter.status === '待提報') {
-            q = query(q, where('jdmControl.status', '==', ''));
-        } else {
-            q = query(q, where('jdmControl.status', '==', dashboardFilter.status));
+    try {
+      // Apply status filter (server-side)
+      if (dashboardFilter.status && dashboardFilter.status !== '全部' && dashboardFilter.status !== '未完成案件 (全部)') {
+          if (dashboardFilter.status === '待提報') {
+              q = query(q, where('jdmControl.status', '==', ''));
+          } else {
+              q = query(q, where('jdmControl.status', '==', dashboardFilter.status));
+          }
+      }
+
+      // Apply station filter (server-side)
+      if (dashboardFilter.stations.length > 0) {
+        if (dashboardFilter.stations.length > 10) {
+          // Firestore 'in' query has a limit of 10. We can't perform this query.
+          throw new Error("您一次最多只能篩選 10 個站點。");
         }
-    }
-
-    // Apply station filter
-    if (dashboardFilter.stations.length > 0 && dashboardFilter.stations.length <= 10) { // Firestore 'in' operator limit is 10
         q = query(q, where('station', 'in', dashboardFilter.stations));
+      }
+
+      // NOTE: Date range filters are now handled on the client-side to prevent crashes from complex queries
+      //       that would require numerous composite indexes.
+
+      const unsub = onSnapshot(q, (snap) => {
+          setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setIsLoadingDashboard(false);
+      }, (error) => {
+          // This block catches async errors from Firestore, typically for missing indexes.
+          console.error("Firestore onSnapshot 錯誤:", error);
+          setQueryError("讀取資料庫時發生錯誤。這通常是因為篩選條件組合需要建立新的資料庫索引。請嘗試簡化篩選條件，或在 Firebase 後台根據錯誤提示建立索引。");
+          setIsLoadingDashboard(false);
+          setAllCases([]); // Clear cases to prevent showing stale data
+      });
+
+      return unsub;
+
+    } catch (e) {
+      // This block catches synchronous errors during query construction (e.g., 'in' array limit).
+      console.error("查詢建立錯誤:", e);
+      setQueryError(e.message);
+      setIsLoadingDashboard(false);
+      setAllCases([]); // Clear cases
     }
-
-    // Apply month filters - Prioritize reportMonth if both are present for server-side range filter
-    // Firestore allows only one range filter (e.g., '>', '<', '>=', '<=') per query.
-    // Complex special formulas will be handled client-side in dashboardResults useMemo.
-    let hasDateRangeFilter = false;
-    if (dashboardFilter.reportMonth && !dashboardFilter.specialFormula) {
-      const startOfMonth = `${dashboardFilter.reportMonth}-01`;
-      const endOfMonth = `${dashboardFilter.reportMonth}-31`; // Use 31 for simplicity, assuming no month has more. A more precise check would be to calculate actual last day.
-      q = query(q, where('jdmControl.reportDate', '>=', startOfMonth), where('jdmControl.reportDate', '<=', endOfMonth));
-      hasDateRangeFilter = true;
-    } else if (dashboardFilter.closeMonth && !dashboardFilter.specialFormula && !hasDateRangeFilter) {
-      const startOfMonth = `${dashboardFilter.closeMonth}-01`;
-      const endOfMonth = `${dashboardFilter.closeMonth}-31`;
-      q = query(q, where('jdmControl.closeDate', '>=', startOfMonth), where('jdmControl.closeDate', '<=', endOfMonth));
-      hasDateRangeFilter = true;
-    }
-
-    // Order by reportDate for consistent results and to support range queries
-    // If a range filter is applied, the orderBy field must be the same as the range filter field.
-    // If no explicit range filter is applied, we can order by reportDate.
-    if (!hasDateRangeFilter || (hasDateRangeFilter && dashboardFilter.reportMonth)) {
-      q = query(q, orderBy('jdmControl.reportDate', 'asc'));
-    } else if (hasDateRangeFilter && dashboardFilter.closeMonth) {
-      q = query(q, orderBy('jdmControl.closeDate', 'asc'));
-    } else {
-      // Default ordering if no specific date range or formula is applied on server
-      q = query(q, orderBy('jdmControl.reportDate', 'asc'));
-    }
-
-
-    const unsub = onSnapshot(q, (snap) => {
-        setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setIsLoadingDashboard(false);
-    }, (error) => {
-        console.error("案件監聽異常:", error);
-        setIsLoadingDashboard(false);
-    });
-    return unsub;
   }, [user, db, hasActivatedDashboard, dashboardFilter]);
 
   useEffect(() => { const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300); return () => clearTimeout(t); }, [searchAddress]);
@@ -1683,7 +1687,15 @@ const App = () => {
               </div>
             </div>
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden min-h-[450px] flex flex-col">
-              {!isDashboardSearchActive ? (<div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>) : (
+              {queryError ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-rose-50 text-rose-700">
+                    <AlertCircle size={48} />
+                    <h3 className="text-xl font-black mt-4">資料庫查詢失敗</h3>
+                    <p className="mt-2 font-bold max-w-lg">{queryError}</p>
+                </div>
+              ) : !isDashboardSearchActive ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>
+              ) : (
                 <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table><div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
               )}
             </div>

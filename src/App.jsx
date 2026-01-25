@@ -1041,6 +1041,8 @@ const App = () => {
 
     setCorrectionStatus({ isProcessing: true, fileName: file.name, report: '' });
 
+    console.log('【診斷】標準站點名稱列表:', sheetNames);
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {

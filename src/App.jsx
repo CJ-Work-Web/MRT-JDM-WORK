@@ -435,6 +435,7 @@ const App = () => {
   const [exportMode, setExportMode] = useState('待追蹤事項');
   const [isStationDropdownOpen, setIsStationDropdownOpen] = useState(false);
   const stationDropdownRef = useRef(null);
+  const [stationSearch, setStationSearch] = useState('');
   const [isCostSidebarOpen, setIsCostSidebarOpen] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(100);
   
@@ -1629,7 +1630,46 @@ const App = () => {
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
                   <div className="relative shrink-0" ref={stationDropdownRef}>
                     <button onClick={() => setIsStationDropdownOpen(!isStationDropdownOpen)} className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-black text-sm border bg-white min-w-[140px] sm:min-w-[160px] transition-all hover:border-blue-400 shadow-sm ${dashboardFilter.stations.length > 0 ? 'border-blue-500 text-blue-600 bg-blue-50/30' : 'border-slate-300 text-slate-700'}`}><Building2 size={16} className="shrink-0" /><span className="flex-1 text-left whitespace-nowrap truncate">{dashboardFilter.stations.length === 0 ? '所有站點' : dashboardFilter.stations.length === 1 ? `${String(dashboardFilter.stations[0])}` : `已選 ${dashboardFilter.stations.length}`}</span><ChevronDown size={14} className={`transition-transform duration-200 shrink-0 ${isStationDropdownOpen ? 'rotate-180' : ''}`} /></button>
-                    {isStationDropdownOpen && (<div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-[20px] shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100 p-3"><div className="flex items-center justify-between p-2 border-b mb-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">站點篩選</span><div className="flex gap-3"><button onClick={() => setDashboardFilter({...dashboardFilter, stations: availableStations})} className="text-xs font-black text-blue-600 hover:underline whitespace-nowrap">全選</button><button onClick={() => setDashboardFilter({...dashboardFilter, stations: []})} className="text-xs font-black text-slate-500 hover:underline whitespace-nowrap">清除</button></div></div><div className="max-h-80 overflow-y-auto space-y-1 custom-scrollbar">{availableStations.map(st => { const isChecked = dashboardFilter.stations.includes(st); return (<button key={st} onClick={() => { const s = dashboardFilter.stations.includes(st) ? dashboardFilter.stations.filter(x=>x!==st) : [...dashboardFilter.stations, st]; setDashboardFilter({...dashboardFilter, stations: s}); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${isChecked ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}><div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>{isChecked && <Check size={12} className="text-white" strokeWidth={4} />}</div><span className="truncate text-left flex-1 text-xs">{String(st)}</span></button>); })}</div></div>)}
+                    {isStationDropdownOpen && (
+                      <div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-[20px] shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100 p-3">
+                        <div className="p-2 border-b mb-2">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input 
+                              type="text"
+                              placeholder="搜尋站點..."
+                              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border-slate-200 focus:border-blue-500 focus:ring-blue-500/50"
+                              value={stationSearch}
+                              onChange={(e) => setStationSearch(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex items-center justify-end gap-3 mt-2">
+                            <button onClick={() => setDashboardFilter({...dashboardFilter, stations: sheetNames.sort()})} className="text-xs font-black text-blue-600 hover:underline whitespace-nowrap">全選</button>
+                            <button onClick={() => setDashboardFilter({...dashboardFilter, stations: []})} className="text-xs font-black text-slate-500 hover:underline whitespace-nowrap">清除</button>
+                          </div>
+                        </div>
+                        <div className="max-h-60 overflow-y-auto space-y-1 custom-scrollbar">
+                          {sheetNames.filter(name => name.toLowerCase().includes(stationSearch.toLowerCase())).map(st => { 
+                            const isChecked = dashboardFilter.stations.includes(st); 
+                            return (
+                              <button 
+                                key={st} 
+                                onClick={() => { 
+                                  const s = dashboardFilter.stations.includes(st) 
+                                    ? dashboardFilter.stations.filter(x => x !== st) 
+                                    : [...dashboardFilter.stations, st]; 
+                                  setDashboardFilter({...dashboardFilter, stations: s}); 
+                                }} 
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${isChecked ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}
+                              >
+                                <div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>{isChecked && <Check size={12} className="text-white" strokeWidth={4} />}</div>
+                                <span className="truncate text-left flex-1 text-xs">{String(st)}</span>
+                              </button>
+                            ); 
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[160px] sm:min-w-[200px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}>
 <option>未完成案件</option><option>全部</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>

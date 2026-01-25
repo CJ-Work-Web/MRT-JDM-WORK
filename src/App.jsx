@@ -417,6 +417,12 @@ const App = () => {
     hasImportedB: false
   });
 
+  const [correctionStatus, setCorrectionStatus] = useState({
+    isProcessing: false,
+    fileName: '',
+    report: ''
+  });
+
   const [isManualMode, setIsManualMode] = useState(false);
 
   const [dashboardFilter, setDashboardFilter] = useState({ 
@@ -591,8 +597,12 @@ const App = () => {
         (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))
       );
     }
-
-
+    if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
+    if (dashboardFilter.status !== '全部') {
+      if (dashboardFilter.status === '待提報') filtered = filtered.filter(c => !c.jdmControl?.status);
+      else if (dashboardFilter.status === '未完成案件') filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
+      else filtered = filtered.filter(c => c.jdmControl?.status === dashboardFilter.status);
+    }
     if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
       const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
       switch (dashboardFilter.specialFormula) {
@@ -1021,6 +1031,72 @@ const App = () => {
     reader.readAsBinaryString(file); e.target.value = '';
   };
 
+  const handleFileCorrection = (e) => {
+    if (!isXlsxLoaded || !window.XLSX || sheetNames.length === 0) {
+      showMessage("前置資料尚未載入完成，請稍後再試。", "error");
+      return;
+    }
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setCorrectionStatus({ isProcessing: true, fileName: file.name, report: '' });
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
+        
+        let changesCount = 0;
+        let reportLog = "站點名稱校正報告：\n-----------------------\n";
+
+        const normalize = (str) => String(str || '').trim().replace(/[-_ ]/g, '').toUpperCase();
+        
+        const correctSheetNamesMap = new Map(sheetNames.map(name => [normalize(name), name]));
+
+        const correctedData = data.map((row, rowIndex) => {
+          const originalStation = row[1]; // Column B
+          if (!originalStation || rowIndex === 0) { // Assuming first row is header
+            return row;
+          }
+
+          const normalizedStation = normalize(originalStation);
+          if (correctSheetNamesMap.has(normalizedStation)) {
+            const correctName = correctSheetNamesMap.get(normalizedStation);
+            if (originalStation !== correctName) {
+              row[1] = correctName;
+              changesCount++;
+              reportLog += `第 ${rowIndex + 1} 行: "${originalStation}"  ->  "${correctName}"\n`;
+            }
+          } else {
+             reportLog += `第 ${rowIndex + 1} 行: "${originalStation}"  ->  未找到對應標準名稱，保持不變\n`;
+          }
+          return row;
+        });
+        
+        reportLog += `-----------------------\n總共修正了 ${changesCount} 筆資料。\n`;
+        console.log(reportLog);
+        setCorrectionStatus({ isProcessing: false, fileName: file.name, report: reportLog });
+
+        const newWs = window.XLSX.utils.aoa_to_sheet(correctedData);
+        const newWb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(newWb, newWs, "Corrected");
+        
+        const originalName = file.name.replace(/\.xlsx?$/, '');
+        window.XLSX.writeFile(newWb, `${originalName}_corrected.xlsx`);
+        showMessage("站點名稱校正完成，已觸發下載。", "success");
+
+      } catch (err) {
+        console.error("校正檔案時發生錯誤:", err);
+        showMessage("校正檔案時發生錯誤，請檢查主控台日誌。", "error");
+        setCorrectionStatus({ isProcessing: false, fileName: file.name, report: '處理失敗' });
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
+  
   const handleSaveToCloud = async () => {
     if (!user || !db) return;
     const needsRemarks = (['抽換', '退件'].includes(formData.jdmControl.status));
@@ -1697,6 +1773,13 @@ const App = () => {
                     )}
                   </div>
                   <div className="flex items-center xl:ml-auto shrink-0 group">
+                    <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
+                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-100 text-yellow-800 rounded-xl cursor-pointer hover:bg-yellow-200 transition font-black text-xs shadow-lg ${correctionStatus.isProcessing ? 'opacity-50 pointer-events-none' : ''}`}> 
+                        {correctionStatus.isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Edit3 size={14} />} 校正站點工具
+                        <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileCorrection} disabled={correctionStatus.isProcessing} />
+                      </label>
+                      {correctionStatus.fileName && !correctionStatus.isProcessing && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已處理 {correctionStatus.fileName}</span>}
+                    </div>
                     <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
                       <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}> 
                         {importStatus.isProcessingC ? <Loader2 size={14} className="animate-spin" /> : <History size={14} />} 匯入歷史案件

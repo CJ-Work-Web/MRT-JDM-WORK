@@ -128,11 +128,11 @@ function getInitialFormState() {
     costItems: [{ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }],
     incomeItems: [{ id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }],
     quoteTitle: '', 
-    siteDescription: '收到承租人報修，請我方派員查看。', 
-    constructionDesc1: '經廠商檢測，。', 
+    siteDescription: '收到承租人報修，請我方派員查看。',
+    constructionDesc1: '經廠商檢測，。',
     constructionDesc2: '',
     completionDate: '', 
-    completionDesc1: '廠商將OOO更新，測試功能正常，完成修繕。', 
+    completionDesc1: '廠商將OOO更新，測試功能正常，完成修繕。',
     completionDesc2: '', 
     totalAmount: 0, 
     satisfactionLevel: '', 
@@ -218,7 +218,7 @@ const QuickPhraseMenu = React.memo(({ onSelect, type }) => {
 });
 
 const InfoCard = ({ icon: Icon, label, value, colorClass, onCopy, fullWidth = false }) => (
-  <div className={`${colorClass} rounded-2xl p-4 border flex items-start gap-4 transition-all relative group ${fullWidth ? 'sm:col-span-2' : ''}`}>
+  <div className={`${colorClass} rounded-2xl p-4 border flex items-start gap-4 transition-all relative group ${fullWidth ? 'sm:col-span-2' : ''}`}> 
     <div className="bg-white p-2.5 rounded-xl shadow-sm shrink-0"><Icon size={20} className="text-current" /></div>
     <div className="space-y-0.5 flex-1 min-w-0">
       <div className="flex justify-between items-center mb-0.5">
@@ -574,25 +574,32 @@ const App = () => {
   }, [debouncedSearchAddress, flattenedAddressData, formData.station]);
 
   const dashboardResults = useMemo(() => {
-    if (!isDashboardSearchActive) return [];
+    // allCases now contains results already filtered by server for basic status, stations, and one date range (if applicable).
     let filtered = [...allCases];
+
+    // Client-side filtering for complex conditions:
+    // 1. Multi-field text search (not easily done on Firestore server-side)
     if (dashboardFilter.search) {
       const s = dashboardFilter.search.toLowerCase();
-      filtered = filtered.filter(c => 
-        (String(c.address || '')).toLowerCase().includes(s) || 
-        (String(c.tenant || '')).toLowerCase().includes(s) || 
-        (String(c.station || '')).toLowerCase().includes(s) || 
+      filtered = filtered.filter(c =>
+        (String(c.address || '')).toLowerCase().includes(s) ||
+        (String(c.tenant || '')).toLowerCase().includes(s) ||
+        (String(c.station || '')).toLowerCase().includes(s) ||
         (String(c.jdmControl?.caseNumber || '')).toLowerCase().includes(s) ||
-        (String(c.quoteTitle || '')).toLowerCase().includes(s) || 
+        (String(c.quoteTitle || '')).toLowerCase().includes(s) ||
         (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))
       );
     }
-    if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
-    if (dashboardFilter.status !== '全部') {
-      if (dashboardFilter.status === '待提報') filtered = filtered.filter(c => !c.jdmControl?.status);
-      else if (dashboardFilter.status === '未完成案件 (全部)') filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
-      else filtered = filtered.filter(c => c.jdmControl?.status === dashboardFilter.status);
+
+    // 2. "未完成案件 (全部)" status (negative condition, hard to query efficiently in Firestore)
+    //    Also, if server-side status filter is '待提報', '提報', '抽換', '退件', '結報', it means dashboardFilter.status is NOT '全部' and NOT '未完成案件 (全部)'
+    //    So we only need to apply this client-side filter if dashboardFilter.status is specifically '未完成案件 (全部)'
+    if (dashboardFilter.status === '未完成案件 (全部)') {
+      filtered = filtered.filter(c => String(c.jdmControl?.status || '') !== '結報');
     }
+    // Note: '待提報' is now handled server-side as status == ''
+
+    // 3. Special Formulas (complex logic involving multiple fields and date ranges, or conditions like '< rM')
     if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
       const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
       switch (dashboardFilter.specialFormula) {
@@ -601,16 +608,14 @@ const App = () => {
         case '本期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && !cD && status === '提報' && type === '2.2'; }); break;
         case '前期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return (rD !== '' && rD < rM) && !cD && status === '提報' && type === '2.2'; }); break;
         case '約內已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && cD.startsWith(cM) && status === '結報' && type === '2.1'; }); break;
-        case '內控管理': filtered = filtered.filter(c => { 
-          const rD = String(c.jdmControl?.reportDate || ''); 
-          const cD = String(c.jdmControl?.closeDate || ''); 
-          return (rD >= rM) && (cD >= rM && cD <= (cM + '-31')); 
+        case '內控管理': filtered = filtered.filter(c => {
+          const rD = String(c.jdmControl?.reportDate || '');
+          const cD = String(c.jdmControl?.closeDate || '');
+          return (rD >= rM) && (cD >= rM && cD <= (cM + '-31'));
         }); break;
       }
-    } else {
-      if (dashboardFilter.reportMonth) filtered = filtered.filter(c => String(c.jdmControl?.reportDate || '').startsWith(dashboardFilter.reportMonth));
-      if (dashboardFilter.closeMonth) filtered = filtered.filter(c => String(c.jdmControl?.closeDate || '').startsWith(dashboardFilter.closeMonth));
     }
+    // Sorting is also important
     return filtered.sort((a, b) => { const dA = String(a.jdmControl?.reportDate || '9999-99-99'); const dB = String(b.jdmControl?.reportDate || '9999-99-99'); return dA.localeCompare(dB); });
   }, [allCases, dashboardFilter, isDashboardSearchActive]);
 
@@ -791,7 +796,7 @@ const App = () => {
                 headers.forEach((h, i) => { 
                   if (h) {
                     const val = r[i];
-                    obj[String(h).trim()] = val === undefined ? '' : val; 
+                    obj[String(h).trim()] = val === undefined ? '' : val;
                   }
                 });
                 all.push(obj);
@@ -914,12 +919,11 @@ const App = () => {
             }
 
             let rawCostVendor = String(sr['維修廠商'] || '').trim();
-            const incomeAmountInclusive = Number(sr['收入金額(稅後)']) || 0;
             let costAmountInclusive = Number(sr['費用金額']) || 0;
 
             if (!billingVendor.includes('晟晁') && !rawCostVendor && billingVendor !== '') {
               rawCostVendor = billingVendor;
-              costAmountInclusive = incomeAmountInclusive;
+              costAmountInclusive = Number(sr['收入金額(稅後)']) || 0;
             }
 
             let costVendorClean = rawCostVendor;
@@ -931,7 +935,7 @@ const App = () => {
             }
 
             // 反推未稅價
-            const preTaxPrice = Math.round(incomeAmountInclusive / 1.05);
+            const preTaxPrice = Math.round(costAmountInclusive / 1.05);
 
             // 滿意度
             const satisfactionOptions = ['非常滿意', '滿意', '尚可', '需改進', '不滿意'];
@@ -954,7 +958,7 @@ const App = () => {
               repairType: String(sr['契約內/外'] || '').includes('外') ? '2.2' : '2.1',
               quoteTitle: String(sr['報價單標題'] || '').trim(),
               siteDescription: String(sr['現場狀況'] || '').trim(),
-              totalAmount: incomeAmountInclusive,
+              totalAmount: costAmountInclusive, // 這裡應該是收入金額
               reportDate: reportDateVal, // 寫入根層級 reportDate
               satisfactionLevel: sLevel,
               satisfactionScore: sScore,
@@ -983,7 +987,7 @@ const App = () => {
               incomeItems: [{
                 id: generateUUID(),
                 source: billingVendor,
-                incomeAmount: incomeAmountInclusive,
+                incomeAmount: Number(sr['收入金額(稅後)']) || 0,
                 incomeVoucherNumber: incomeVoucher,
                 receiveDate: cleanedDates['收入發票日期'] || '',
                 receiptNumber: String(sr['收入發票號碼'] || '').trim()
@@ -1017,7 +1021,7 @@ const App = () => {
         console.error(err);
         setImportStatus(prev => ({ ...prev, isProcessingA: false, isProcessingB: false, isProcessingC: false }));
         showMessage("檔案處理失敗", "error"); 
-      }
+      } 
     };
     reader.readAsBinaryString(file); e.target.value = '';
   };
@@ -1053,7 +1057,10 @@ const App = () => {
       incomeItems: (item.incomeItems || []).map(ii => ({ ...ii, incomeVoucherNumber: ii.incomeVoucherNumber || '', remarks: ii.remarks || '' }))
     };
     setFormData({ ...getInitialFormState(), ...sanitizedCase });
-    setCurrentDocId(item.id); setIsManualMode(false); setActiveView('editor'); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setCurrentDocId(item.id);
+    setIsManualMode(false);
+    setActiveView('editor'); 
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   const handleDeleteTrigger = useCallback((id) => { setPendingDeleteId(id); setIsDeleteModalOpen(true); }, []);
@@ -1127,10 +1134,61 @@ const App = () => {
   useEffect(() => {
     if (!user || !db || !hasActivatedDashboard) return;
     setIsLoadingDashboard(true);
-    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'));
-    const unsub = onSnapshot(q, (snap) => { setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setIsLoadingDashboard(false); }, (error) => { console.error("案件監聽異常:", error); setIsLoadingDashboard(false); });
+    let casesRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
+    let q = query(casesRef); // Base query
+
+    // Apply status filter
+    if (dashboardFilter.status && dashboardFilter.status !== '全部' && dashboardFilter.status !== '未完成案件 (全部)') {
+        if (dashboardFilter.status === '待提報') {
+            q = query(q, where('jdmControl.status', '==', ''));
+        } else {
+            q = query(q, where('jdmControl.status', '==', dashboardFilter.status));
+        }
+    }
+
+    // Apply station filter
+    if (dashboardFilter.stations.length > 0 && dashboardFilter.stations.length <= 10) { // Firestore 'in' operator limit is 10
+        q = query(q, where('station', 'in', dashboardFilter.stations));
+    }
+
+    // Apply month filters - Prioritize reportMonth if both are present for server-side range filter
+    // Firestore allows only one range filter (e.g., '>', '<', '>=', '<=') per query.
+    // Complex special formulas will be handled client-side in dashboardResults useMemo.
+    let hasDateRangeFilter = false;
+    if (dashboardFilter.reportMonth && !dashboardFilter.specialFormula) {
+      const startOfMonth = `${dashboardFilter.reportMonth}-01`;
+      const endOfMonth = `${dashboardFilter.reportMonth}-31`; // Use 31 for simplicity, assuming no month has more. A more precise check would be to calculate actual last day.
+      q = query(q, where('jdmControl.reportDate', '>=', startOfMonth), where('jdmControl.reportDate', '<=', endOfMonth));
+      hasDateRangeFilter = true;
+    } else if (dashboardFilter.closeMonth && !dashboardFilter.specialFormula && !hasDateRangeFilter) {
+      const startOfMonth = `${dashboardFilter.closeMonth}-01`;
+      const endOfMonth = `${dashboardFilter.closeMonth}-31`;
+      q = query(q, where('jdmControl.closeDate', '>=', startOfMonth), where('jdmControl.closeDate', '<=', endOfMonth));
+      hasDateRangeFilter = true;
+    }
+
+    // Order by reportDate for consistent results and to support range queries
+    // If a range filter is applied, the orderBy field must be the same as the range filter field.
+    // If no explicit range filter is applied, we can order by reportDate.
+    if (!hasDateRangeFilter || (hasDateRangeFilter && dashboardFilter.reportMonth)) {
+      q = query(q, orderBy('jdmControl.reportDate', 'asc'));
+    } else if (hasDateRangeFilter && dashboardFilter.closeMonth) {
+      q = query(q, orderBy('jdmControl.closeDate', 'asc'));
+    } else {
+      // Default ordering if no specific date range or formula is applied on server
+      q = query(q, orderBy('jdmControl.reportDate', 'asc'));
+    }
+
+
+    const unsub = onSnapshot(q, (snap) => {
+        setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setIsLoadingDashboard(false);
+    }, (error) => {
+        console.error("案件監聽異常:", error);
+        setIsLoadingDashboard(false);
+    });
     return unsub;
-  }, [user, db, hasActivatedDashboard]);
+  }, [user, db, hasActivatedDashboard, dashboardFilter]);
 
   useEffect(() => { const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300); return () => clearTimeout(t); }, [searchAddress]);
 
@@ -1187,12 +1245,12 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-800 font-sans pb-32" onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}>
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-800 font-sans pb-32" onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY }) }>
       
       <style>{`
-        input[type=\"date\"], input[type=\"month\"] { position: relative; }
-        input[type=\"date\"]::-webkit-calendar-picker-indicator,
-        input[type=\"month\"]::-webkit-calendar-picker-indicator {
+        input[type="date"], input[type="month"] { position: relative; }
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="month"]::-webkit-calendar-picker-indicator {
           position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: auto; height: auto; color: transparent; background: transparent; cursor: pointer; margin: 0; padding: 0; opacity: 0;
         }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -1297,7 +1355,7 @@ const App = () => {
                     </div>
                   </div>
                 </div>
-              ))}
+              ))} 
               <button onClick={() => setFormData({...formData, costItems: [...formData.costItems, { id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' }]})} className="group w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-rose-400 hover:text-rose-500 transition-all"><Plus size={18} /> 新增費用項目</button>
             </div>
           ) : (
@@ -1315,7 +1373,7 @@ const App = () => {
                       <div className="md:col-span-1 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.receiptNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].receiptNumber = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">收入單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.incomeVoucherNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].incomeVoucherNumber = e.target.value; setFormData({...formData, incomeVoucherNumber: n}); }} /></div>
+                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">收入單號碼</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.incomeVoucherNumber} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].incomeVoucherNumber = e.target.value; setFormData({...formData, incomeItems: n}); }} /></div>
                       <div className="md:col-span-1 space-y-1">
                         <label className="text-[10px] font-black text-emerald-600 uppercase whitespace-nowrap shrink-0 ml-1">收入金額(稅後)</label>
                         <div className="relative">
@@ -1327,7 +1385,7 @@ const App = () => {
                     <div className="space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">備註</label><AutoResizeTextarea value={item.remarks} onChange={(e) => { const n = [...formData.incomeItems]; n[idx].remarks = e.target.value; setFormData({...formData, incomeItems: n}); }} className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl !py-2 max-h-[100px] overflow-y-auto custom-scrollbar`} placeholder="輸入收入相關說明" /></div>
                   </div>
                 </div>
-              ))}
+              ))} 
               <button onClick={() => setFormData({...formData, incomeItems: [...formData.incomeItems, { id: generateUUID(), source: '晟晁', receiptNumber: '', receiveDate: '', subtotal: 0, serviceFee: 0, tax: 0, incomeAmount: 0, incomeVoucherNumber: '', remarks: '' }]})} className="group w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-sm flex justify-center items-center gap-2 hover:border-emerald-400 hover:text-emerald-500 transition-all"><Plus size={18} /> 新增收入項目</button>
             </div>
           )}
@@ -1353,7 +1411,7 @@ const App = () => {
             </span>
           </div>
           
-          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-[0.98] shadow-lg shadow-slate-200">
+          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-95 shadow-lg shadow-slate-200">
             {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} 立即儲存並同步雲端
           </button>
         </div>
@@ -1392,14 +1450,14 @@ const App = () => {
               </div>
               <div className="flex-1 flex flex-wrap justify-end items-center gap-3 w-full">
                 <div className="flex flex-col items-center gap-1">
-                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl cursor-pointer hover:bg-indigo-100 transition font-bold text-sm border border-indigo-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingA ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl cursor-pointer hover:bg-indigo-100 transition font-bold text-sm border border-indigo-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingA ? 'opacity-50 pointer-events-none' : ''}`}> 
                     {importStatus.isProcessingA ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} 匯入代管清冊
                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('A', e)} disabled={importStatus.isProcessingA} />
                   </label>
                   {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已載入 {importStatus.fileNameA}</span>}
                 </div>
                 <div className="flex flex-col items-center gap-1">
-                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold text-sm border border-emerald-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingB ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold text-sm border border-emerald-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingB ? 'opacity-50 pointer-events-none' : ''}`}> 
                     {importStatus.isProcessingB ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />} 匯入價目表
                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('B', e)} disabled={importStatus.isProcessingB} />
                   </label>
@@ -1506,22 +1564,24 @@ const App = () => {
               </div>
               <div className="space-y-4 mb-6">
                 <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">報價單標題</label>{formData.quoteTitle && (<button type="button" onClick={(e) => copyToClipboard(formData.quoteTitle, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div><input type="text" className={`w-full ${EDITABLE_INPUT_STYLE}`} value={formData.quoteTitle} onChange={(e) => updateFormField('quoteTitle', e.target.value)} placeholder="報價標題" /></div>
-                {formData.repairType === '2.1' ? (<div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">搜尋項次或項目</label><div className="relative"><Search size={16} className="absolute left-3.5 top-3.5 text-slate-500" /><input type="text" className={`w-full pl-10 pr-4 py-3 rounded-xl border ${EDITABLE_INPUT_STYLE}`} value={searchB} onChange={(e) => setSearchB(e.target.value)} placeholder="搜尋項次或項目" />{searchB && (<div className="absolute z-10 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-56 overflow-y-auto custom-scrollbar">{fileBData.filter(b => b.id.toLowerCase().includes(searchB.toLowerCase()) || b.name.includes(searchB)).map((b, i) => (<div key={i} className="p-3 hover:bg-blue-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), ...b, quantity: 1, isManual: false }] })); setSearchB(''); }}><div className="flex flex-col text-sm font-black"><span>{b.id}</span><span>{b.name}</span></div><span className="text-xs font-black text-emerald-600 shrink-0 ml-3">${b.price.toLocaleString()}</span></div>))}</div>)}</div></div>) : (<button onClick={() => setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), id: '', name: '', unit: '', price: '', quantity: 1, isManual: true }] }))} className="w-full py-3 border-2 border-dashed border-blue-400 rounded-2xl font-black text-sm text-blue-600 bg-blue-50/30 flex justify-center items-center gap-2 transition-all hover:bg-blue-50 whitespace-nowrap"><Plus size={16} /> 新增自定義項目</button>)}
+              {formData.repairType === '2.1' ? (<div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">搜尋項次或項目</label><div className="relative"><Search size={16} className="absolute left-3.5 top-3.5 text-slate-500" /><input type="text" className={`w-full pl-10 pr-4 py-3 rounded-xl border ${EDITABLE_INPUT_STYLE}`} value={searchB} onChange={(e) => setSearchB(e.target.value)} placeholder="搜尋項次或項目" />{searchB && (<div className="absolute z-10 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-56 overflow-y-auto custom-scrollbar">{fileBData.filter(b => b.id.toLowerCase().includes(searchB.toLowerCase()) || b.name.includes(searchB)).map((b, i) => (<div key={i} className="p-3 hover:bg-blue-50 border-b last:border-none flex justify-between items-center cursor-pointer transition-colors" onClick={() => { setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), ...b, quantity: 1, isManual: false }] })); setSearchB(''); }}><div className="flex flex-col text-sm font-black"><span>{b.id}</span><span>{b.name}</span></div><span className="text-xs font-black text-emerald-600 shrink-0 ml-3">${b.price.toLocaleString()}</span></div>))}</div>)}</div></div>) : (<button onClick={() => setFormData(p => ({ ...p, repairItems: [...p.repairItems, { uid: generateUUID(), id: '', name: '', unit: '', price: '', quantity: 1, isManual: true }] }))} className="w-full py-3 border-2 border-dashed border-blue-400 rounded-2xl font-black text-sm text-blue-600 bg-blue-50/30 flex justify-center items-center gap-2 transition-all hover:bg-blue-50 whitespace-nowrap"><Plus size={16} /> 新增自定義項目</button>)}
               </div>
               <div className="overflow-x-auto border rounded-2xl shadow-sm custom-scrollbar"><table className="w-full text-sm border-collapse table-fixed"><thead className="bg-slate-50 text-xs text-slate-500 font-black uppercase border-b"><tr><th className="p-4 w-28 text-center whitespace-nowrap shrink-0">項次</th><th className="p-4 text-left whitespace-nowrap shrink-0">項目</th><th className="p-4 w-20 text-center whitespace-nowrap shrink-0">單位</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">單價</th><th className="p-4 w-24 text-center whitespace-nowrap shrink-0">數量</th><th className="p-4 w-32 text-right whitespace-nowrap shrink-0">小計</th><th className="p-4 w-12 whitespace-nowrap shrink-0"></th></tr></thead><tbody className="divide-y divide-slate-100 bg-white">
                 {formData.repairItems.length === 0 ? (<tr><td colSpan="7" className="p-16 text-center text-slate-300 font-black italic uppercase tracking-widest">目前尚未加入修繕內容</td></tr>) : (formData.repairItems.map((item, idx) => (
                   <tr key={item.uid} className="hover:bg-blue-50/20 group transition-colors">
                     <td className="p-3 text-center font-mono text-sm text-slate-500 truncate">{item.isManual ? (idx + 1) : item.id}</td>
-                    <td className="p-3">{item.isManual ? (<div className="relative group/copy flex items-center gap-1.5"><input className={`w-full ${EDITABLE_INPUT_STYLE} !px-3 !py-1.5 !text-sm`} value={item.name} onChange={(e) => { const n = [...formData.repairItems]; n[idx].name = e.target.value; setFormData({...formData, repairItems: n}); }} /><button onClick={(e) => copyToClipboard(item.name, e)} className="p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all opacity-0 group-hover/copy:opacity-100 shrink-0" title="複製項目名稱"><Copy size={12} /></button></div>) : (<div className="font-black text-slate-700 truncate px-2 text-sm">{String(item.name)}</div>)}</td>
+                    <td className="p-3">{item.isManual ? (<div className="relative group/copy flex items-center gap-1.5"><input className={`w-full ${EDITABLE_INPUT_STYLE} !px-3 !py-1.5 !text-sm`} value={item.name} onChange={(e) => { const n = [...formData.repairItems]; n[idx].name = e.target.value; setFormData({...formData, repairItems: n}); }} /><button onClick={(e) => copyToClipboard(item.name, e)} className="p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all opacity-0 group-hover/copy:opacity-100 shrink-0" title="複製項目名稱"><Copy size={12} /></button></div>) : (<div className="font-black text-slate-700 truncate px-2 text-sm">{String(item.name)}</div>)}
+                    </td>
                     <td className="p-3 text-center"><input className={`w-full text-center border rounded-lg py-1 ${item.isManual ? EDITABLE_INPUT_STYLE : 'bg-slate-50 border-none font-bold'}`} value={item.unit} readOnly={!item.isManual} onChange={(e) => { const n = [...formData.repairItems]; n[idx].unit = e.target.value; setFormData({...formData, repairItems: n}); }} /></td>
                     <td className="p-3"><input type="number" onWheel={(e) => e.target.blur()} className={`w-full py-1 rounded-lg text-right font-mono border ${item.isManual ? EDITABLE_INPUT_STYLE : 'bg-slate-50 border-none text-slate-500'}`} value={item.price} readOnly={!item.isManual} onChange={(e) => { const v = e.target.value; const n = [...formData.repairItems]; n[idx].price = v === "" ? "" : Math.max(0, Number(v)); setFormData({...formData, repairItems: n}); }} /></td>
                     <td className="p-3 text-center"><input type="number" onWheel={(e) => e.target.blur()} className={`w-full py-1 rounded-lg text-center font-black border ${EDITABLE_INPUT_STYLE}`} value={item.quantity} onChange={(e) => { const v = e.target.value; const n = [...formData.repairItems]; n[idx].quantity = v === "" ? "" : Math.max(0, Number(v)); setFormData({...formData, repairItems: n}); }} /></td>
                     <td className="p-3 text-right font-black text-blue-600 font-mono text-base">${((Number(item.price) || 0) * (Number(item.quantity) || 0)).toLocaleString()}</td>
                     <td className="p-3 text-center"><button onClick={() => setFormData({...formData, repairItems: formData.repairItems.filter((_, i) => i !== idx)})} className="p-2 text-slate-300 hover:text-rose-500 transition-colors rounded-xl"><Trash2 size={16} /></button></td>
                   </tr>
-                )))}
-              </tbody></table></div>
-              <div className="flex justify-end mt-4 pt-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100 shadow-inner"><div className="space-y-3 w-64 text-right"><div className="flex justify-between text-sm font-black text-slate-600 uppercase tracking-tight whitespace-nowrap"><span className="shrink-0 mr-4">小計 (未稅)</span><span className="text-slate-700 font-mono font-black">${calculationSummary.subtotal.toLocaleString()}</span></div>{formData.repairType === '2.1' && (<div className="flex justify-between text-sm font-black text-slate-600 uppercase tracking-tight whitespace-nowrap"><span className="shrink-0 mr-4">服務費 (5%)</span><span className="font-mono font-black">${calculationSummary.serviceFee.toLocaleString()}</span></div>)}<div className="flex justify-between text-sm font-black text-slate-600 uppercase tracking-tight whitespace-nowrap"><span className="shrink-0 mr-4">稅金 (5%)</span><span className="text-slate-700 font-mono font-black">${calculationSummary.tax.toLocaleString()}</span></div><div className="h-px bg-slate-200 my-2"></div><div className="flex justify-between items-center text-2xl font-black text-blue-700 font-mono tracking-tighter whitespace-nowrap"><span className="text-xs text-blue-800 uppercase tracking-widest shrink-0 mr-4">總價(稅後)</span>${calculationSummary.final.toLocaleString()}</div></div></div>
+                )))} 
+              </tbody></table><div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
+              <div className="flex justify-end mt-4 pt-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100 shadow-inner"><div className="space-y-3 w-64 text-right"><div className="flex justify-between text-sm font-black text-slate-600 uppercase tracking-tight whitespace-nowrap"><span className="shrink-0 mr-4">小計 (未稅)</span><span className="text-slate-700 font-mono font-black">${calculationSummary.subtotal.toLocaleString()}</span></div>{formData.repairType === '2.1' && (<div className="flex justify-between text-sm font-black text-slate-600 uppercase tracking-tight whitespace-nowrap"><span className="shrink-0 mr-4">服務費 (5%)</span><span className="font-mono font-black">${calculationSummary.serviceFee.toLocaleString()}</span></div>)}
+              <div className="flex justify-between text-sm font-black text-slate-600 uppercase tracking-tight whitespace-nowrap"><span className="shrink-0 mr-4">稅金 (5%)</span><span className="text-slate-700 font-mono font-black">${calculationSummary.tax.toLocaleString()}</span></div><div className="h-px bg-slate-200 my-2"></div><div className="flex justify-between items-center text-2xl font-black text-blue-700 font-mono tracking-tighter whitespace-nowrap"><span className="text-xs text-blue-800 uppercase tracking-widest shrink-0 mr-4">總價(稅後)</span>${calculationSummary.final.toLocaleString()}</div></div></div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -1561,15 +1621,17 @@ const App = () => {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 <div className="lg:col-span-8 space-y-6">
                   <div className="bg-slate-50/80 p-5 rounded-3xl border border-slate-100 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between mb-4 border-b border-slate-200 pb-2 gap-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">JDM 報修進度</span>{jdmErrors.length > 0 && (<div className="flex items-center gap-2 px-3 py-1 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 animate-in fade-in zoom-in-95 duration-200 max-w-full [word-break:break-word]"><AlertTriangle size={12} className="shrink-0" /><div className="text-[10px] font-black leading-tight">{jdmErrors[0]} {jdmErrors.length > 1 && `(等 ${jdmErrors.length} 項異常)`}</div></div>)}</div>
+                    <div className="flex flex-wrap items-center justify-between mb-4 border-b border-slate-200 pb-2 gap-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">JDM 報修進度</span>{jdmErrors.length > 0 && (<div className="flex items-center gap-2 px-3 py-1 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 animate-in fade-in zoom-in-95 duration-200 max-w-full [word-break:break-word]"><AlertTriangle size={12} className="shrink-0" /><div className="text-[10px] font-black leading-tight">{jdmErrors[0]} {jdmErrors.length > 1 && `(等 ${jdmErrors.length} 項異常)`}</div></div>)}
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{[{l:'提報',f1:'reportDate',f2:'reportSubmitDate',c:'bg-blue-500',tc:'text-blue-600'},{l:'奉核',f1:'approvalDate',c:'bg-purple-500',tc:'text-purple-600'},{l:'結報',f1:'closeDate',f2:'closeSubmitDate',c:'bg-emerald-500',tc:'text-emerald-600'}].map((s,i)=>(<div key={i} className="space-y-3"><div className="flex items-center gap-2 mb-1"><div className={`w-2 h-2 rounded-full ${s.c}`}></div><span className={`text-sm font-black ${s.tc} whitespace-nowrap shrink-0`}>{s.l}階段</span></div><div className="space-y-3"><div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-center justify-between gap-1.5 min-[1400px]:gap-3"><label className="text-xs font-black text-slate-600 shrink-0 min-[1400px]:w-12 whitespace-nowrap">{s.l}日</label><input type="date" className={`px-2 py-1.5 rounded-xl text-xs flex-1 border transition-all cursor-pointer hover:bg-slate-50 active:scale-[0.98] ${getJdmFieldError(s.f1) ? 'ring-2 ring-rose-500/50 border-rose-500 bg-rose-50/30' : EDITABLE_INPUT_STYLE} !px-2`} value={formData.jdmControl[s.f1]} onChange={(e) => updateJdmField(s.f1, e.target.value)} /></div>{s.f2 && (<div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-center justify-between gap-1.5 min-[1400px]:gap-3"><label className="text-xs font-black text-slate-600 shrink-0 min-[1400px]:w-12 whitespace-nowrap">送件日</label><input type="date" className={`px-2 py-1.5 rounded-xl text-xs flex-1 border transition-all cursor-pointer hover:bg-slate-50 active:scale-[0.98] ${getJdmFieldError(s.f2) ? 'ring-2 ring-rose-500/50 border-rose-500 bg-rose-50/30' : EDITABLE_INPUT_STYLE} !px-2`} value={formData.jdmControl[s.f2]} onChange={(e) => updateJdmField(s.f2, e.target.value)} /></div>)}</div></div>))}</div>
                   </div>
-                  <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-4 gap-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">待補資料</span><div className={`px-3 py-1 rounded-xl text-[10px] font-black whitespace-nowrap shrink-0 ${(formData.jdmControl.checklist || []).length > 0 ? 'bg-orange-50 text-orange-600 animate-pulse border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>待補資料 {(formData.jdmControl.checklist || []).length} 項</div></div><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{JDM_CHECKLIST_ITEMS.map((it) => { const is = (formData.jdmControl.checklist || []).includes(it.id); return (<button key={it.id} onClick={() => toggleJdmCheckItem(it.id)} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${is ? 'bg-orange-50 border-orange-200 text-orange-700 shadow-sm' : 'bg-slate-50/50 border-slate-100 text-slate-500'}`}><div className={`w-4.5 h-4.5 rounded flex items-center justify-center transition-all shrink-0 ${is ? 'bg-orange-500 text-white' : 'bg-white border'}`}>{is && <AlertCircle size={12} />}</div><span className="text-sm font-black whitespace-nowrap truncate">{String(it.label)}</span></button>); })}</div></div>
+                  <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-4 gap-2"><span className="text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap shrink-0">待補資料</span><div className={`px-3 py-1 rounded-xl text-[10px] font-black whitespace-nowrap shrink-0 ${(formData.jdmControl.checklist || []).length > 0 ? 'bg-orange-50 text-orange-600 animate-pulse border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>待補資料 {(formData.jdmControl.checklist || []).length} 項</div></div><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{JDM_CHECKLIST_ITEMS.map((it) => { const is = (formData.jdmControl.checklist || []).includes(it.id); return (<button key={it.id} onClick={() => toggleJdmCheckItem(it.id)} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${is ? 'bg-orange-50 border-orange-200 text-orange-700 shadow-sm' : 'bg-slate-50/50 border-slate-100 text-slate-500 hover:border-slate-700'}`}><div className={`w-4.5 h-4.5 rounded flex items-center justify-center transition-all shrink-0 ${is ? 'bg-orange-500 text-white' : 'bg-white border'}`}>{is && <AlertCircle size={12} />}</div><span className="text-sm font-black whitespace-nowrap truncate">{String(it.label)}</span></button>); })}</div></div>
                 </div>
                 <div className="lg:col-span-4 bg-slate-900 text-white p-6 rounded-3xl shadow-xl space-y-6">
                   <div><label className="text-xs font-black text-slate-400 uppercase flex items-center gap-3 tracking-widest whitespace-nowrap shrink-0"><Hash size={14} className="text-blue-400" /> JDM 系統案號</label><input type="text" className={`w-full px-4 py-2.5 text-sm rounded-xl bg-slate-800 text-white mt-1.5 outline-none focus:border-blue-500 font-mono font-black transition-all border ${getJdmFieldError('caseNumber') ? 'ring-2 ring-rose-500 border-rose-500' : 'border-slate-700'}`} value={formData.jdmControl.caseNumber} onChange={(e) => updateJdmField('caseNumber', e.target.value)} /></div>
                   <div className="space-y-3"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">目前狀態</label><div className="grid grid-cols-2 gap-3">{['提報', '結報', '抽換', '退件'].map((s) => { const is = formData.jdmControl.status === s; return (<label key={s} onClick={(e) => { e.preventDefault(); handleStatusClick(s); }} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${is ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-lg' : 'border-slate-800 bg-slate-800/50 text-slate-500 hover:border-slate-700'}`}><input type="radio" className="sr-only" checked={is} readOnly /><div className={`w-2.5 h-2.5 rounded-full shrink-0 ${is ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'}`}></div><span className="text-sm font-black whitespace-nowrap">{String(s)}</span></label>); })}</div></div>
-                  <div className="space-y-3"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">案件備註</label>{(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && (<div className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-black rounded border border-rose-500/30 animate-pulse uppercase whitespace-nowrap shrink-0">{jdmErrors.length > 0 ? "資料異常必填" : "變更原因必填"}</div>)}</div><div className="relative"><AutoResizeTextarea value={formData.jdmControl.remarks} onChange={(e) => updateJdmField('remarks', e.target.value)} className={`w-full p-4 rounded-2xl text-sm bg-slate-800 border-slate-700 text-white transition-all focus:border-blue-400 ${(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && !formData.jdmControl.remarks.trim() ? 'ring-2 ring-rose-500/50 border-rose-500' : ''}`} placeholder={(jdmErrors.length > 0 || ['退件', '抽換'].includes(formData.jdmControl.status)) ? "請說明異常或變更原因 (必填)" : "請輸入案件備註 或退補原因"} /></div></div>
+                  <div className="space-y-3"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap shrink-0">案件備註</label>{(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && (<div className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-black rounded border border-rose-500/30 animate-pulse uppercase whitespace-nowrap shrink-0">{jdmErrors.length > 0 ? "資料異常必填" : "變更原因必填"}</div>)}
+                  </div><div className="relative"><AutoResizeTextarea value={formData.jdmControl.remarks} onChange={(e) => updateJdmField('remarks', e.target.value)} className={`w-full p-4 rounded-2xl text-sm bg-slate-800 border-slate-700 text-white transition-all focus:border-blue-400 ${(['退件', '抽換'].includes(formData.jdmControl.status) || jdmErrors.length > 0) && !formData.jdmControl.remarks.trim() ? 'ring-2 ring-rose-500/50 border-rose-500' : ''}`} placeholder={(jdmErrors.length > 0 || ['退件', '抽換'].includes(formData.jdmControl.status)) ? "請說明異常或變更原因 (必填)" : "請輸入案件備註 或退補原因"} /></div></div>
                 </div>
               </div>
             </div>
@@ -1610,7 +1672,7 @@ const App = () => {
                   </div>
                   <div className="flex items-center xl:ml-auto shrink-0 group">
                     <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
-                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}> 
                         {importStatus.isProcessingC ? <Loader2 size={14} className="animate-spin" /> : <History size={14} />} 匯入歷史案件
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload('C', e)} disabled={importStatus.isProcessingC} />
                       </label>

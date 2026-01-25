@@ -237,64 +237,11 @@ const InfoCard = ({ icon: Icon, label, value, colorClass, onCopy, fullWidth = fa
 );
 
 const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
-  const status = String(item.jdmControl?.status || '');
-  const reportDate = String(item.jdmControl?.reportDate || '');
-  const checklist = (item.jdmControl && Array.isArray(item.jdmControl.checklist)) ? item.jdmControl.checklist : [];
-  const isMissingApproval = status === '結報' && !item.jdmControl?.approvalDate && item.repairType !== '2.1';
-  
-  const totalCost = (item.costItems || []).reduce((sum, ci) => sum + (Number(ci.costAmount) || 0), 0);
-
+  // All complex logic is temporarily removed for debugging.
   return (
-    <tr className="hover:bg-slate-50/50 group transition-colors border-b last:border-none border-slate-100 text-[11px] md:text-xs">
-      <td className="p-2 text-center">
-        <span className={`px-2 py-0.5 rounded-full font-black inline-flex justify-center shadow-sm whitespace-nowrap w-20 ${!status ? 'bg-slate-100 text-slate-500' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
-          {status || '待提報'}
-        </span>
-      </td>
-      <td className="p-2 text-center">
-        <div className="text-slate-600 font-mono font-black whitespace-nowrap">
-          {reportDate || '--'}
-        </div>
-      </td>
-      <td className="p-2">
-        <div className="text-slate-900 font-black truncate max-w-full">{String(item.jdmControl?.caseNumber || '未編號')}</div>
-        <div className="font-bold text-[9px] text-slate-500 mt-0.5 uppercase truncate">{String(item.station || '未知')}</div>
-      </td>
-      <td className="p-2">
-        <div className="font-black text-slate-900 truncate max-w-full">{String(item.tenant || '--')}</div>
-        <div className="text-[9px] text-slate-500 mt-0.5 truncate leading-relaxed font-bold" title={String(item.address || '')}>{String(item.address || '無地址')}</div>
-      </td>
-      <td className="p-2">
-        <div className="font-bold text-slate-600 truncate leading-relaxed max-w-full" title={String(item.quoteTitle || '')}>
-          {String(item.quoteTitle || '--')}
-        </div>
-      </td>
-      <td className="p-2 text-right">
-        <div className="font-mono font-black text-rose-600 whitespace-nowrap">
-          ${totalCost.toLocaleString()}
-        </div>
-      </td>
-      <td className="p-2">
-        <div className="flex flex-wrap gap-1">
-          {isMissingApproval && (
-            <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 border border-orange-200 rounded text-[9px] font-black whitespace-nowrap animate-pulse">缺奉核日</span>
-          )}
-          {checklist.length > 0 ? (
-            checklist.map(id => (
-              <span key={id} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 border border-orange-100 rounded text-[9px] font-black whitespace-nowrap">
-                {String(CHECKLIST_MAP[id] || id)}
-              </span>
-            ))
-          ) : (
-            !isMissingApproval && <span className="font-black text-emerald-600 flex items-center gap-1.5 whitespace-nowrap"><CheckCircle size={10} /> 資料齊備</span>
-          )}
-        </div>
-      </td>
-      <td className="p-2 text-center">
-        <div className="flex items-center justify-center gap-2">
-          <button onClick={() => onEdit(item)} className="p-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700 shadow-sm transition-all active:scale-95 shrink-0"><ExternalLink size={14} /></button>
-          <button onClick={() => onDelete(item.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors shrink-0"><Trash2 size={14} /></button>
-        </div>
+    <tr>
+      <td colSpan="8" className="p-4 text-slate-500">
+        [偵錯] 正在渲染案件 ID: {item?.id || 'NO ID'}
       </td>
     </tr>
   );

@@ -576,30 +576,25 @@ const App = () => {
   }, [debouncedSearchAddress, flattenedAddressData, formData.station]);
 
   const dashboardResults = useMemo(() => {
-    // allCases now contains results already filtered by the server for status and stations.
+    if (!isDashboardSearchActive) return [];
     let filtered = [...allCases];
-
-    // --- Client-Side Filtering for remaining complex conditions ---
-
-    // 1. Multi-field text search
     if (dashboardFilter.search) {
       const s = dashboardFilter.search.toLowerCase();
-      filtered = filtered.filter(c =>
-        (String(c.address || '')).toLowerCase().includes(s) ||
-        (String(c.tenant || '')).toLowerCase().includes(s) ||
-        (String(c.station || '')).toLowerCase().includes(s) ||
+      filtered = filtered.filter(c => 
+        (String(c.address || '')).toLowerCase().includes(s) || 
+        (String(c.tenant || '')).toLowerCase().includes(s) || 
+        (String(c.station || '')).toLowerCase().includes(s) || 
         (String(c.jdmControl?.caseNumber || '')).toLowerCase().includes(s) ||
-        (String(c.quoteTitle || '')).toLowerCase().includes(s) ||
+        (String(c.quoteTitle || '')).toLowerCase().includes(s) || 
         (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))
       );
     }
-
-    // 2. "未完成案件 (全部)" status (negative condition)
-    if (dashboardFilter.status === '未完成案件 (全部)') {
-      filtered = filtered.filter(c => String(c.jdmControl?.status || '') !== '結報');
+    if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
+    if (dashboardFilter.status !== '全部') {
+      if (dashboardFilter.status === '待提報') filtered = filtered.filter(c => !c.jdmControl?.status);
+      else if (dashboardFilter.status === '未完成案件 (全部)') filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
+      else filtered = filtered.filter(c => c.jdmControl?.status === dashboardFilter.status);
     }
-
-    // 3. Date-based filtering (Special Formulas or simple month ranges)
     if (dashboardFilter.specialFormula && dashboardFilter.reportMonth && dashboardFilter.closeMonth) {
       const rM = dashboardFilter.reportMonth, cM = dashboardFilter.closeMonth;
       switch (dashboardFilter.specialFormula) {
@@ -608,25 +603,18 @@ const App = () => {
         case '本期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && !cD && status === '提報' && type === '2.2'; }); break;
         case '前期待追蹤': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return (rD !== '' && rD < rM) && !cD && status === '提報' && type === '2.2'; }); break;
         case '約內已完工': filtered = filtered.filter(c => { const rD = String(c.jdmControl?.reportDate || ''), cD = String(c.jdmControl?.closeDate || ''), status = String(c.jdmControl?.status || ''), type = c.repairType; return rD.startsWith(rM) && cD.startsWith(cM) && status === '結報' && type === '2.1'; }); break;
-        case '內控管理': filtered = filtered.filter(c => {
-          const rD = String(c.jdmControl?.reportDate || '');
-          const cD = String(c.jdmControl?.closeDate || '');
-          return (rD >= rM) && (cD >= rM && cD <= (cM + '-31'));
+        case '內控管理': filtered = filtered.filter(c => { 
+          const rD = String(c.jdmControl?.reportDate || ''); 
+          const cD = String(c.jdmControl?.closeDate || ''); 
+          return (rD >= rM) && (cD >= rM && cD <= (cM + '-31')); 
         }); break;
       }
     } else {
-      // Re-adding simple month filtering on the client side
-      if (dashboardFilter.reportMonth) {
-        filtered = filtered.filter(c => String(c.jdmControl?.reportDate || '').startsWith(dashboardFilter.reportMonth));
-      }
-      if (dashboardFilter.closeMonth) {
-        filtered = filtered.filter(c => String(c.jdmControl?.closeDate || '').startsWith(dashboardFilter.closeMonth));
-      }
+      if (dashboardFilter.reportMonth) filtered = filtered.filter(c => String(c.jdmControl?.reportDate || '').startsWith(dashboardFilter.reportMonth));
+      if (dashboardFilter.closeMonth) filtered = filtered.filter(c => String(c.jdmControl?.closeDate || '').startsWith(dashboardFilter.closeMonth));
     }
-
-    // Final sorting of the results
     return filtered.sort((a, b) => { const dA = String(a.jdmControl?.reportDate || '9999-99-99'); const dB = String(b.jdmControl?.reportDate || '9999-99-99'); return dA.localeCompare(dB); });
-  }, [allCases, dashboardFilter]);
+  }, [allCases, dashboardFilter, isDashboardSearchActive]);
 
   const isFormDirty = useMemo(() => formData.station !== '' || formData.tenant !== '' || formData.address !== '' || formData.repairItems.length > 0, [formData]);
 
@@ -1142,57 +1130,33 @@ const App = () => {
 
   useEffect(() => {
     if (!user || !db || !hasActivatedDashboard) return;
-
-    setQueryError(null); // Clear previous errors on a new attempt
+    
+    setQueryError(null);
     setIsLoadingDashboard(true);
-
-    let casesRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
-    // Start with a default ordering. This is good practice.
-    let q = query(casesRef, orderBy('jdmControl.reportDate', 'asc'));
-
+    
     try {
-      // Apply status filter (server-side)
-      if (dashboardFilter.status && dashboardFilter.status !== '全部' && dashboardFilter.status !== '未完成案件 (全部)') {
-          if (dashboardFilter.status === '待提報') {
-              q = query(q, where('jdmControl.status', '==', ''));
-          } else {
-              q = query(q, where('jdmControl.status', '==', dashboardFilter.status));
-          }
-      }
-
-      // Apply station filter (server-side)
-      if (dashboardFilter.stations.length > 0) {
-        if (dashboardFilter.stations.length > 10) {
-          // Firestore 'in' query has a limit of 10. We can't perform this query.
-          throw new Error("您一次最多只能篩選 10 個站點。");
-        }
-        q = query(q, where('station', 'in', dashboardFilter.stations));
-      }
-
-      // NOTE: Date range filters are now handled on the client-side to prevent crashes from complex queries
-      //       that would require numerous composite indexes.
-
+      // Reverting to the simplest possible query to ensure stability.
+      const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'));
+      
       const unsub = onSnapshot(q, (snap) => {
-          setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-          setIsLoadingDashboard(false);
+        setAllCases(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setIsLoadingDashboard(false);
       }, (error) => {
-          // This block catches async errors from Firestore, typically for missing indexes.
-          console.error("Firestore onSnapshot 錯誤:", error);
-          setQueryError("讀取資料庫時發生錯誤。這通常是因為篩選條件組合需要建立新的資料庫索引。請嘗試簡化篩選條件，或在 Firebase 後台根據錯誤提示建立索引。");
-          setIsLoadingDashboard(false);
-          setAllCases([]); // Clear cases to prevent showing stale data
+        console.error("Firestore onSnapshot 錯誤:", error);
+        setQueryError("讀取資料庫時發生未知錯誤，請檢查 Firebase 設定與權限。");
+        setIsLoadingDashboard(false);
+        setAllCases([]);
       });
-
+      
       return unsub;
 
     } catch (e) {
-      // This block catches synchronous errors during query construction (e.g., 'in' array limit).
       console.error("查詢建立錯誤:", e);
       setQueryError(e.message);
       setIsLoadingDashboard(false);
-      setAllCases([]); // Clear cases
+      setAllCases([]);
     }
-  }, [user, db, hasActivatedDashboard, dashboardFilter]);
+  }, [user, db, hasActivatedDashboard]);
 
   useEffect(() => { const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300); return () => clearTimeout(t); }, [searchAddress]);
 

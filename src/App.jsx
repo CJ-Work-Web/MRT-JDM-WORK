@@ -589,7 +589,7 @@ const App = () => {
         (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))
       );
     }
-    if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
+
     // Server-side filtering is now active for status. Only handle special client-side cases here.
     if (dashboardFilter.status === '未完成案件 (全部)') {
       filtered = filtered.filter(c => c.jdmControl?.status !== '結報');
@@ -1144,6 +1144,15 @@ const App = () => {
           } else {
               q = query(q, where('jdmControl.status', '==', dashboardFilter.status));
           }
+      }
+
+      // Step 2: Implement server-side filtering for stations.
+      if (dashboardFilter.stations.length > 0) {
+        if (dashboardFilter.stations.length > 10) {
+          // Firestore 'in' query has a limit of 10. Throw an error for the user.
+          throw new Error("Firestore 'in' 查詢一次最多只能篩選 10 個站點。請減少選擇的站點數量。");
+        }
+        q = query(q, where('station', 'in', dashboardFilter.stations));
       }
       
       const unsub = onSnapshot(q, (snap) => {

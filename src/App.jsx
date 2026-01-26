@@ -925,10 +925,11 @@ const App = () => {
 
             let rawCostVendor = String(sr['維修廠商'] || '').trim();
             let costAmountInclusive = Number(sr['費用金額']) || 0;
+            const incomeAmountInclusive = Number(sr['收入金額(稅後)']) || 0;
 
             if (!billingVendor.includes('晟晁') && !rawCostVendor && billingVendor !== '') {
               rawCostVendor = billingVendor;
-              costAmountInclusive = Number(sr['收入金額(稅後)']) || 0;
+              costAmountInclusive = incomeAmountInclusive;
             }
 
             let costVendorClean = rawCostVendor;
@@ -939,8 +940,8 @@ const App = () => {
               costVendorClean = rawCostVendor.replace(costNumMatch[0], '').trim();
             }
 
-            // 反推未稅價
-            const preTaxPrice = Math.round(costAmountInclusive / 1.05);
+            // 反推未稅價 (基於收入)
+            const preTaxPrice = Math.round(incomeAmountInclusive / 1.05);
 
             // 滿意度
             const satisfactionOptions = ['非常滿意', '滿意', '尚可', '需改進', '不滿意'];
@@ -963,7 +964,7 @@ const App = () => {
               repairType: String(sr['契約內/外'] || '').includes('外') ? '2.2' : '2.1',
               quoteTitle: String(sr['報價單標題'] || '').trim(),
               siteDescription: String(sr['現場狀況'] || '').trim(),
-              totalAmount: costAmountInclusive, // 這裡應該是收入金額
+              totalAmount: incomeAmountInclusive,
               reportDate: reportDateVal, // 寫入根層級 reportDate
               satisfactionLevel: sLevel,
               satisfactionScore: sScore,

@@ -424,6 +424,7 @@ const App = () => {
   });
 
   const [isManualMode, setIsManualMode] = useState(false);
+  const [isAllTimeSearch, setIsAllTimeSearch] = useState(false);
 
   const [dashboardFilter, setDashboardFilter] = useState({ 
     search: '', 
@@ -1215,6 +1216,14 @@ const App = () => {
       let casesRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
       let q = query(casesRef); // Base query
 
+      // Date range filtering
+      if (!isAllTimeSearch) {
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        const oneYearAgoString = oneYearAgo.toISOString().split('T')[0];
+        q = query(q, where('jdmControl.reportDate', '>=', oneYearAgoString));
+      }
+      
       // Apply server-side filtering for status.
       if (dashboardFilter.status && dashboardFilter.status !== '全部') { // If status is selected AND not '全部'
           if (dashboardFilter.status === '未完成案件') { // Updated name
@@ -1253,7 +1262,7 @@ const App = () => {
       setIsLoadingDashboard(false);
       setAllCases([]);
     }
-  }, [user, db, hasActivatedDashboard, dashboardFilter]);
+  }, [user, db, hasActivatedDashboard, dashboardFilter, isAllTimeSearch]);
 
   useEffect(() => { const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300); return () => clearTimeout(t); }, [searchAddress]);
 
@@ -1728,7 +1737,7 @@ const App = () => {
                           </div>
                         </div>
                         <div className="max-h-60 overflow-y-auto space-y-1 custom-scrollbar">
-                          {sheetNames.filter(name => name.toLowerCase().includes(stationSearch.toLowerCase())).map(st => { 
+                          {sheetNames.filter(name => name.toLowerCase().includes(stationSearch.toLowerCase()) && name !== '統計').map(st => { 
                             const isChecked = dashboardFilter.stations.includes(st); 
                             return (
                               <button 
@@ -1771,27 +1780,39 @@ const App = () => {
                             <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
                           </div>
                         </div>
+                        <div className="space-y-3 pt-4 border-t">
+                          <button onClick={() => setIsAllTimeSearch(!isAllTimeSearch)} className={`w-full px-3 py-3 text-sm font-black rounded-xl border transition-all text-center leading-tight ${isAllTimeSearch ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>
+                            {isAllTimeSearch ? '返回一年內搜尋' : '載入全部歷史資料'}
+                          </button>
+                        </div>
                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-500 font-bold text-center leading-relaxed">過濾結果：共 {dashboardResults.length} 筆案件</p></div>
                       </div>
                     )}
                   </div>
                   <div className="flex items-center xl:ml-auto shrink-0 group">
+                    {/*
                     <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
-                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-100 text-yellow-800 rounded-xl cursor-pointer hover:bg-yellow-200 transition font-black text-xs shadow-lg ${correctionStatus.isProcessing ? 'opacity-50 pointer-events-none' : ''}`}> 
+                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-100 text-yellow-800 rounded-xl cursor-pointer hover:bg-yellow-200 transition font-black text-xs shadow-lg ${correctionStatus.isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
                         {correctionStatus.isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Edit3 size={14} />} 校正站點工具
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileCorrection} disabled={correctionStatus.isProcessing} />
                       </label>
                       {correctionStatus.fileName && !correctionStatus.isProcessing && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已處理 {correctionStatus.fileName}</span>}
                     </div>
+                    */}
+                    {/*
                     <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
-                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}> 
+                      <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}>
                         {importStatus.isProcessingC ? <Loader2 size={14} className="animate-spin" /> : <History size={14} />} 匯入歷史案件
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload('C', e)} disabled={importStatus.isProcessingC} />
                       </label>
                     </div>
+                    */}
                     <div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button>
                   </div>
                 </div>
+              </div>
+              <div className="text-center text-xs font-black text-slate-400 border-t border-slate-100 pt-4 mt-1">
+                {isAllTimeSearch ? '目前資料範圍：全部歷史案件' : '目前資料範圍：近一年內案件'}
               </div>
             </div>
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden min-h-[450px] flex flex-col">

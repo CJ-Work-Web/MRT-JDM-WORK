@@ -1586,7 +1586,7 @@ const App = () => {
                     {importStatus.isProcessingA ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} 匯入代管清冊
                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('A', e)} disabled={importStatus.isProcessingA} />
                   </label>
-                  {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600">已載入 {importStatus.fileNameA}</span>}
+                  {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已載入 {importStatus.fileNameA}</span>}
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold text-sm border border-emerald-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingB ? 'opacity-50 pointer-events-none' : ''}`}> 

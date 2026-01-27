@@ -249,7 +249,7 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
   return (
     <tr className="hover:bg-slate-50/50 group transition-colors border-b last:border-none border-slate-100 text-[11px] md:text-xs">
       <td className="p-2 text-center">
-        <span className={`px-2 py-0.5 rounded-full font-black inline-flex justify-center shadow-sm whitespace-nowrap w-14 ${!status ? 'bg-slate-300 text-slate-700' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+        <span className={`px-2 py-0.5 rounded-full font-black inline-flex justify-center shadow-sm whitespace-nowrap w-14 ${!status || status === '待提報' ? 'bg-slate-100 text-slate-500' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' || status === '抽換' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
           {status || '待提報'}
         </span>
       </td>

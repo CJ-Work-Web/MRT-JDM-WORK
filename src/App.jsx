@@ -1301,8 +1301,8 @@ const App = () => {
       if (!isAllTimeSearch) {
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        const oneYearAgoString = oneYearAgo.toISOString().split('T')[0];
-        // q = query(q, where('jdmControl.reportDate', '>=', oneYearAgoString));
+        // The query now targets the 'createdAt' field, which is a reliable Timestamp.
+        q = query(q, where('createdAt', '>=', oneYearAgo));
       }
       
       // Apply server-side filtering for status.

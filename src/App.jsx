@@ -249,7 +249,7 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
   return (
     <tr className="hover:bg-slate-50/50 group transition-colors border-b last:border-none border-slate-100 text-[11px] md:text-xs">
       <td className="p-2 text-center">
-        <span className={`px-2 py-0.5 rounded-full font-black inline-flex justify-center shadow-sm whitespace-nowrap w-20 ${!status ? 'bg-slate-100 text-slate-500' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+        <span className={`px-2 py-0.5 rounded-full font-black inline-flex justify-center shadow-sm whitespace-nowrap w-14 ${!status ? 'bg-slate-100 text-slate-500' : status === '結報' ? 'bg-emerald-100 text-emerald-700' : status === '退件' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
           {status || '待提報'}
         </span>
       </td>
@@ -1883,7 +1883,7 @@ const App = () => {
               ) : !hasActivatedDashboard ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>
               ) : (
-                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-18 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">
                     <button
                       type="button"
                       onClick={() => {

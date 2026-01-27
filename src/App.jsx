@@ -1294,7 +1294,7 @@ const App = () => {
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
         const oneYearAgoString = oneYearAgo.toISOString().split('T')[0];
-        q = query(q, where('jdmControl.reportDate', '>=', oneYearAgoString));
+        // q = query(q, where('jdmControl.reportDate', '>=', oneYearAgoString));
       }
       
       // Apply server-side filtering for status.

@@ -1300,7 +1300,7 @@ const App = () => {
       // Apply server-side filtering for status.
       if (dashboardFilter.status && dashboardFilter.status !== '全部') { // If status is selected AND not '全部'
           if (dashboardFilter.status === '未完成案件') { // Updated name
-              q = query(q, where('jdmControl.status', 'in', ['', '提報', '抽換', '退件']));
+              // q = query(q, where('jdmControl.status', 'in', ['', '提報', '抽換', '退件']));
           } else if (dashboardFilter.status === '待提報') {
               q = query(q, where('jdmControl.status', '==', ''));
           } else {

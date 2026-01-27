@@ -1882,14 +1882,14 @@ const App = () => {
                       {correctionStatus.fileName && !correctionStatus.isProcessing && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已處理 {correctionStatus.fileName}</span>}
                     </div>
                     */}
-                    {/*
+                    
                     <div className="flex flex-col items-center gap-1 mr-3 border-r pr-3">
                       <label className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl cursor-pointer hover:bg-slate-700 transition font-black text-xs shadow-lg ${importStatus.isProcessingC ? 'opacity-50 pointer-events-none' : ''}`}>
                         {importStatus.isProcessingC ? <Loader2 size={14} className="animate-spin" /> : <History size={14} />} 匯入歷史案件
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload('C', e)} disabled={importStatus.isProcessingC} />
                       </label>
                     </div>
-                    */}
+                    
                     <div className="relative shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><FileText size={14} /></div><select className="pl-9 pr-6 py-3 rounded-l-2xl font-black text-sm border border-emerald-200 border-r-0 bg-emerald-50/30 text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-100 transition-all min-w-[140px] sm:min-w-[150px] appearance-none" value={exportMode} onChange={(e) => setExportMode(e.target.value)}><option value="待追蹤事項">待追蹤事項</option><option value="工作提報單">工作提報單</option><option value="滿意度調查">滿意度調查</option><option value="內控管理">內控管理</option></select><div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400"><ChevronDown size={14} /></div></div><button onClick={handleExportExcel} className="flex items-center gap-2 px-6 py-3 rounded-r-2xl font-black text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-lg active:scale-95 whitespace-nowrap border border-emerald-600 border-l-emerald-500/30"><Download size={16} /> 匯出</button>
                   </div>
                 </div>

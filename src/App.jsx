@@ -259,15 +259,15 @@ const MemoizedRepairRow = React.memo(({ item, onEdit, onDelete }) => {
         </div>
       </td>
       <td className="p-2">
-        <div className="text-slate-900 font-black truncate max-w-full">{String(item.jdmControl?.caseNumber || '未編號')}</div>
-        <div className="font-bold text-[9px] text-slate-500 mt-0.5 uppercase truncate">{String(item.station || '未知')}</div>
+        <div className="text-slate-900 font-black break-words">{String(item.jdmControl?.caseNumber || '未編號')}</div>
+        <div className="font-bold text-[9px] text-slate-500 mt-0.5 uppercase break-words">{String(item.station || '未知')}</div>
       </td>
       <td className="p-2">
-        <div className="font-black text-slate-900 truncate max-w-full">{String(item.tenant || '--')}</div>
-        <div className="text-[9px] text-slate-500 mt-0.5 truncate leading-relaxed font-bold" title={String(item.address || '')}>{String(item.address || '無地址')}</div>
+        <div className="font-black text-slate-900 break-words">{String(item.tenant || '--')}</div>
+        <div className="text-[9px] text-slate-500 mt-0.5 break-words leading-relaxed font-bold" title={String(item.address || '')}>{String(item.address || '無地址')}</div>
       </td>
       <td className="p-2">
-        <div className="font-bold text-slate-600 truncate leading-relaxed max-w-full" title={String(item.quoteTitle || '')}>
+        <div className="font-bold text-slate-600 break-words leading-relaxed" title={String(item.quoteTitle || '')}>
           {String(item.quoteTitle || '--')}
         </div>
       </td>
@@ -1883,7 +1883,7 @@ const App = () => {
               ) : !hasActivatedDashboard ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>
               ) : (
-                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">
+                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">
                     <button
                       type="button"
                       onClick={() => {
@@ -1900,7 +1900,7 @@ const App = () => {
                         sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
                       )}
                     </button>
-                  </th><th className="w-36 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-64 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-56 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-48 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.slice(0, displayLimit).map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table>
+                  </th><th className="w-32 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest">案號 / 站點</th><th className="w-56 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right">費用合計</th><th className="w-48 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.slice(0, displayLimit).map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table>
                   {dashboardResults.length > displayLimit && (
                     <div className="p-4 text-center border-t border-slate-100">
                       <button 

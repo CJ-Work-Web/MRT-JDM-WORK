@@ -448,7 +448,7 @@ const App = () => {
   const [stationSearch, setStationSearch] = useState('');
   const [isCostSidebarOpen, setIsCostSidebarOpen] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(100);
-  const [sortConfig, setSortConfig] = useState({ key: 'reportDate', direction: 'asc' });
+  const [sortConfig, setSortConfig] = useState({ key: 'reportDate', direction: 'desc' });
   
   const [formData, setFormData] = useState(getInitialFormState());
   const lastChangedField = useRef(null);
@@ -1475,9 +1475,9 @@ const App = () => {
           <div className="flex items-center gap-4"><div className="bg-rose-600 p-2.5 rounded-xl"><DollarSign size={24} /></div><div><h2 className="font-black text-base uppercase tracking-widest whitespace-nowrap">內部收支登記</h2><p className="text-xs text-slate-400 font-bold whitespace-nowrap">僅供內部對帳與行政紀錄使用</p></div></div>
           <button onClick={() => setIsCostSidebarOpen(false)} className="p-2 hover:bg-slate-800 rounded-xl transition-colors"><X size={24} /></button>
         </div>
-        <div className="flex bg-slate-100 p-1.5 m-4 rounded-xl border border-slate-200">
-          <button onClick={() => setActiveTab('expense')} className={`flex-1 py-3 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'expense' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400'}`}>費用</button>
-          <button onClick={() => setActiveTab('income')} className={`flex-1 py-3 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'income' ? 'bg-white text-emerald-600 shadow-sm border border-emerald-100' : 'text-slate-400'}`}>收入</button>
+        <div className="flex bg-slate-100 p-1 m-2 rounded-xl border border-slate-200">
+          <button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'expense' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400'}`}>費用</button>
+          <button onClick={() => setActiveTab('income')} className={`flex-1 py-2 rounded-lg text-sm font-black flex items-center justify-center gap-2 ${activeTab === 'income' ? 'bg-white text-emerald-600 shadow-sm border border-emerald-100' : 'text-slate-400'}`}>收入</button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 custom-scrollbar">
           {activeTab === 'expense' ? (
@@ -1545,7 +1545,7 @@ const App = () => {
           )}
         </div>
         
-        <div className="p-4 bg-white border-t flex flex-col gap-2 shadow-[0_-10px_30px_-5px_rgba(0,0,0,0.06)] shrink-0">
+        <div className="p-3 bg-white border-t flex flex-col gap-2 shadow-[0_-10px_30px_-5px_rgba(0,0,0,0.06)] shrink-0">
           <div className="flex justify-between items-center border-b border-slate-50 pb-2">
             <div className="flex flex-col">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">本案收益</span>
@@ -1565,7 +1565,7 @@ const App = () => {
             </span>
           </div>
           
-          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-95 shadow-lg shadow-slate-200">
+          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-2.5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-95 shadow-lg shadow-slate-200">
             {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} 立即儲存並同步雲端
           </button>
         </div>
@@ -1840,7 +1840,7 @@ const App = () => {
                       </div>
                     )}
                   </div>
-                  <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[160px] sm:min-w-[200px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}>
+                  <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[120px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}>
 <option>未完成案件</option><option>全部</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
                   <div className="relative"> {/* Added relative container */}
                     <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>

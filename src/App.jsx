@@ -1460,9 +1460,8 @@ const App = () => {
           {activeTab === 'expense' ? (
             <div className="space-y-3 pb-24">
               {formData.costItems.map((item, idx) => (
-                <div key={item.id} className="relative bg-white p-4 rounded-2xl border border-slate-200 shadow-sm group">
-                  <div className="absolute left-0 top-0 bottom-0 w-2 bg-rose-500 rounded-l-2xl"></div>
-                  <div className="space-y-2.5">
+                <div key={item.id} className="relative bg-white p-3 rounded-2xl border border-slate-200 shadow-sm group">
+<div className="space-y-2">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">維修廠商</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.contractor} onChange={(e) => { const n = [...formData.costItems]; n[idx].contractor = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
                       <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>
@@ -1493,7 +1492,7 @@ const App = () => {
           ) : (
             <div className="space-y-3 pb-24">
               {formData.incomeItems.map((item, idx) => (
-                <div key={item.id} className="relative bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div key={item.id} className="relative bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
                   <div className="absolute left-0 top-0 bottom-0 w-2 bg-emerald-500 rounded-l-2xl"></div>
                   <div className="space-y-2.5">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1523,7 +1522,7 @@ const App = () => {
           )}
         </div>
         
-        <div className="p-6 bg-white border-t flex flex-col gap-3 shadow-[0_-10px_30px_-5px_rgba(0,0,0,0.06)] shrink-0">
+        <div className="p-4 bg-white border-t flex flex-col gap-2 shadow-[0_-10px_30px_-5px_rgba(0,0,0,0.06)] shrink-0">
           <div className="flex justify-between items-center border-b border-slate-50 pb-2">
             <div className="flex flex-col">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">本案收益</span>
@@ -1538,12 +1537,12 @@ const App = () => {
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
               {activeTab === 'expense' ? '費用合計' : '收入合計'}
             </span>
-            <span className={`text-3xl font-black font-mono tracking-tighter ${activeTab === 'expense' ? 'text-rose-600' : 'text-emerald-600'}`}>
+            <span className={`text-2xl font-black font-mono tracking-tighter ${activeTab === 'expense' ? 'text-rose-600' : 'text-emerald-600'}`}>
               ${(activeTab === 'expense' ? financialStats.totalCosts : formData.incomeItems.reduce((sum, item) => sum + (Number(item.incomeAmount) || 0), 0)).toLocaleString()}
             </span>
           </div>
           
-          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-95 shadow-lg shadow-slate-200">
+          <button onClick={handleSaveToCloud} disabled={isSaving} className="w-full mt-1 bg-slate-900 text-white py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all hover:bg-slate-800 active:scale-95 shadow-lg shadow-slate-200">
             {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} 立即儲存並同步雲端
           </button>
         </div>
@@ -1823,19 +1822,19 @@ const App = () => {
                     <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>
                     {isSpecialSearchOpen && (
                       <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-[28px] shadow-2xl z-[110] animate-in fade-in zoom-in-95 duration-200 p-6 space-y-6">
-                        <div className="flex items-center justify-between border-b pb-3"><span className="text-xs font-black text-slate-500 uppercase tracking-widest">月份篩選設定</span><button onClick={() => setDashboardFilter({...dashboardFilter, reportMonth: '', closeMonth: '', specialFormula: ''})} className="text-[10px] font-black text-blue-600 hover:underline">清空條件</button></div>
+                        <div className="flex items-center justify-between border-b pb-3"><span className="text-sm font-black text-slate-500 uppercase tracking-widest">月份篩選設定</span><button onClick={() => setDashboardFilter({...dashboardFilter, reportMonth: '', closeMonth: '', specialFormula: ''})} className="text-[10px] font-black text-blue-600 hover:underline">清空條件</button></div>
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1.5"><Calendar size={10}/> JDM提報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.reportMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, reportMonth: e.target.value})} /></div>
-                          <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1.5"><CheckCircle size={10}/> JDM結報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.closeMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, closeMonth: e.target.value})} /></div>
+                          <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1.5"><Calendar size={10}/> JDM提報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.reportMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, reportMonth: e.target.value})} /></div>
+                          <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1.5"><CheckCircle size={10}/> JDM結報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.closeMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, closeMonth: e.target.value})} /></div>
                         </div>
                         <div className="space-y-3 pt-2">
-                          <div className="flex items-center justify-between"><span className="text-xs font-black text-slate-500 uppercase tracking-widest">快速篩選公式</span>{dashboardFilter.specialFormula && <button onClick={()=>setDashboardFilter({...dashboardFilter, specialFormula: ''})} className="text-[10px] font-black text-slate-300 hover:text-rose-500">清除公式</button>}</div>
+                          <div className="flex items-center justify-between"><span className="text-sm font-black text-slate-500 uppercase tracking-widest">快速篩選公式</span>{dashboardFilter.specialFormula && <button onClick={()=>setDashboardFilter({...dashboardFilter, specialFormula: ''})} className="text-[10px] font-black text-slate-300 hover:text-rose-500">清除公式</button>}</div>
                           <div className="grid grid-cols-2 gap-2">
                             {['本期已完工', '前期已完工', '本期待追蹤', '前期待追蹤'].map(f => (
-                              <button key={f} onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === f ? '' : f}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>{String(f)}</button>
+                              <button key={f} onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === f ? '' : f}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>{String(f)}</button>
                             ))}
-                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>約內已完工</button>
-                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-[11px] font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
+                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>約內已完工</button>
+                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
                           </div>
                         </div>
                         <div className="space-y-3 pt-4 border-t">

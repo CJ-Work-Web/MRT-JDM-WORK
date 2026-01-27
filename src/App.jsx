@@ -1842,32 +1842,34 @@ const App = () => {
                   </div>
                   <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border min-w-[160px] sm:min-w-[200px] ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}>
 <option>未完成案件</option><option>全部</option><option disabled className="bg-slate-100 text-slate-400">───── 常規狀態 ─────</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
-                  <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>
-                    {isSpecialSearchOpen && (
-                      <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-[28px] shadow-2xl z-[110] animate-in fade-in zoom-in-95 duration-200 p-6 space-y-6">
-                        <div className="flex items-center justify-between border-b pb-3"><span className="text-sm font-black text-slate-500 uppercase tracking-widest">月份篩選設定</span><button onClick={() => setDashboardFilter({...dashboardFilter, reportMonth: '', closeMonth: '', specialFormula: ''})} className="text-[10px] font-black text-blue-600 hover:underline">清空條件</button></div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1.5"><Calendar size={10}/> JDM提報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.reportMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, reportMonth: e.target.value})} /></div>
-                          <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1.5"><CheckCircle size={10}/> JDM結報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.closeMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, closeMonth: e.target.value})} /></div>
-                        </div>
-                        <div className="space-y-3 pt-2">
-                          <div className="flex items-center justify-between"><span className="text-sm font-black text-slate-500 uppercase tracking-widest">快速篩選公式</span>{dashboardFilter.specialFormula && <button onClick={()=>setDashboardFilter({...dashboardFilter, specialFormula: ''})} className="text-[10px] font-black text-slate-300 hover:text-rose-500">清除公式</button>}</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {['本期已完工', '前期已完工', '本期待追蹤', '前期待追蹤'].map(f => (
-                              <button key={f} onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === f ? '' : f}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>{String(f)}</button>
-                            ))}
-                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>約內已完工</button>
-                            <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
+                  <div className="relative"> {/* Added relative container */}
+                    <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>
+                      {isSpecialSearchOpen && (
+                        <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-[28px] shadow-2xl z-[110] animate-in fade-in zoom-in-95 duration-200 p-6 space-y-6">
+                          <div className="flex items-center justify-between border-b pb-3"><span className="text-sm font-black text-slate-500 uppercase tracking-widest">月份篩選設定</span><button onClick={() => setDashboardFilter({...dashboardFilter, reportMonth: '', closeMonth: '', specialFormula: ''})} className="text-[10px] font-black text-blue-600 hover:underline">清空條件</button></div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1.5"><Calendar size={10}/> JDM提報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.reportMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, reportMonth: e.target.value})} /></div>
+                            <div className="space-y-1.5"><label className="text-xs font-black text-slate-500 uppercase flex items-center gap-1.5"><CheckCircle size={10}/> JDM結報月份</label><input type="month" className={`w-full ${EDITABLE_INPUT_STYLE} !px-2 !py-2 !text-[11px] rounded-xl`} value={dashboardFilter.closeMonth} onChange={(e) => setDashboardFilter({...dashboardFilter, closeMonth: e.target.value})} /></div>
                           </div>
+                          <div className="space-y-3 pt-2">
+                            <div className="flex items-center justify-between"><span className="text-sm font-black text-slate-500 uppercase tracking-widest">快速篩選公式</span>{dashboardFilter.specialFormula && <button onClick={()=>setDashboardFilter({...dashboardFilter, specialFormula: ''})} className="text-[10px] font-black text-slate-300 hover:text-rose-500">清除公式</button>}</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {['本期已完工', '前期已完工', '本期待追蹤', '前期待追蹤'].map(f => (
+                                <button key={f} onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === f ? '' : f}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>{String(f)}</button>
+                              ))}
+                              <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '約內已完工' ? '' : '約內已完工'}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '約內已完工' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>約內已完工</button>
+                              <button onClick={() => { if (!dashboardFilter.reportMonth || !dashboardFilter.closeMonth) { showMessage("請先選擇提報月份與結報月份", "error"); return; } setDashboardFilter({...dashboardFilter, specialFormula: dashboardFilter.specialFormula === '內控管理' ? '' : '內控管理'}); }} className={`px-3 py-2.5 text-xs font-black rounded-xl border transition-all text-center leading-tight ${dashboardFilter.specialFormula === '內控管理' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}>內控管理</button>
+                            </div>
+                          </div>
+                          <div className="space-y-3 pt-4 border-t">
+                            <button onClick={() => setIsAllTimeSearch(!isAllTimeSearch)} className={`w-full px-3 py-3 text-sm font-black rounded-xl border transition-all text-center leading-tight ${isAllTimeSearch ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>
+                              {isAllTimeSearch ? '返回一年內搜尋' : '載入全部歷史資料'}
+                            </button>
+                          </div>
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-500 font-bold text-center leading-relaxed">過濾結果：共 {dashboardResults.length} 筆案件</p></div>
                         </div>
-                        <div className="space-y-3 pt-4 border-t">
-                          <button onClick={() => setIsAllTimeSearch(!isAllTimeSearch)} className={`w-full px-3 py-3 text-sm font-black rounded-xl border transition-all text-center leading-tight ${isAllTimeSearch ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300'}`}>
-                            {isAllTimeSearch ? '返回一年內搜尋' : '載入全部歷史資料'}
-                          </button>
-                        </div>
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-500 font-bold text-center leading-relaxed">過濾結果：共 {dashboardResults.length} 筆案件</p></div>
-                      </div>
-                    )}
+                      )}
+                  </div> {/* Added closing relative container */}
                   </div>
                   <button onClick={handleResetDashboardFilters} className="flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm bg-slate-50 border-slate-300 text-slate-700">
                     <RotateCcw size={16} /> 重置

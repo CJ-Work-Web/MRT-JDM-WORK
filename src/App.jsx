@@ -1024,6 +1024,7 @@ const App = () => {
                 unit: '式',
                 isManual: true
               }],
+              createdAt: reportDateVal ? new Date(reportDateVal) : serverTimestamp(),
               updatedAt: serverTimestamp(),
               createdBy: user?.uid || 'system'
             };
@@ -1127,12 +1128,23 @@ const App = () => {
     if (jdmErrors.length > 0 && !formData.jdmControl.remarks.trim()) { showMessage("偵測到資料邏輯異常，必須於備註說明原因", "error"); return; }
     setIsSaving(true);
     
+    // Create a mutable copy of the data to save
+    const dataToSave = { ...formData };
+
+    // Part 1: Automatically assign "待提報" status if none is set
+    if (!dataToSave.jdmControl.status) {
+      dataToSave.jdmControl.status = '待提報';
+    }
+    
+    // Ensure total amount is calculated
+    dataToSave.totalAmount = calculationSummary.final;
+
     try {
       if (!currentDocId) {
         // --- Create a new document ---
-        const data = { ...formData, totalAmount: calculationSummary.final, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: user.uid };
+        const finalNewData = { ...dataToSave, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: user.uid };
         const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
-        const docRef = await addDoc(collectionRef, data);
+        const docRef = await addDoc(collectionRef, finalNewData);
         setCurrentDocId(docRef.id);
         setLoadedDocTimestamp(null); // Newly created, no timestamp to check against yet.
         showMessage("案件建立成功", "success");
@@ -1147,17 +1159,13 @@ const App = () => {
 
           const currentDbTimestamp = docSnapshot.data().updatedAt;
           
-          // Optimistic lock check: Compare timestamps.
-          // loadedDocTimestamp can be null if editing a very old record without this field.
-          // currentDbTimestamp can be undefined if the field doesn't exist yet.
-          // This check handles cases where either or both might be missing.
           if (loadedDocTimestamp && currentDbTimestamp && !currentDbTimestamp.isEqual(loadedDocTimestamp)) {
              throw new Error("CONFLICT");
           }
 
           // If check passes, proceed with the update.
-          const dataToSave = { ...formData, totalAmount: calculationSummary.final, updatedAt: serverTimestamp() };
-          transaction.update(docRef, dataToSave);
+          const finalUpdateData = { ...dataToSave, updatedAt: serverTimestamp() };
+          transaction.update(docRef, finalUpdateData);
         });
         
         showMessage("案件更新成功", "success");
@@ -1300,9 +1308,9 @@ const App = () => {
       // Apply server-side filtering for status.
       if (dashboardFilter.status && dashboardFilter.status !== '全部') { // If status is selected AND not '全部'
           if (dashboardFilter.status === '未完成案件') { // Updated name
-              // q = query(q, where('jdmControl.status', 'in', ['', '提報', '抽換', '退件']));
+              q = query(q, where('jdmControl.status', 'in', ['', '待提報', '提報', '抽換', '退件']));
           } else if (dashboardFilter.status === '待提報') {
-              q = query(q, where('jdmControl.status', '==', ''));
+              q = query(q, where('jdmControl.status', 'in', ['', '待提報']));
           } else {
               q = query(q, where('jdmControl.status', '==', dashboardFilter.status));
           }

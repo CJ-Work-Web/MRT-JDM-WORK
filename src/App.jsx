@@ -1783,7 +1783,8 @@ const App = () => {
             </div>
           </>
         ) : (
-          <div className="space-y-6 animate-in fade-in duration-500">
+          <>
+            <div className="space-y-6 animate-in fade-in duration-500">
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col gap-5">
               <div className="flex flex-col xl:flex-row gap-4 items-stretch xl:items-center">
                 <div className="flex-1 relative min-w-0"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" placeholder="搜尋門牌、承租人、案號、項目或標題..." className={`w-full pl-12 pr-6 py-3.5 rounded-2xl border font-bold text-sm ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.search} onChange={(e) => setDashboardFilter({...dashboardFilter, search: e.target.value})} /></div>
@@ -1930,7 +1931,7 @@ const App = () => {
                 <div className="bg-slate-50 p-2 text-[11px] font-black text-slate-400 text-center uppercase border-t tracking-widest border-slate-100 whitespace-nowrap">過濾結果：共 {dashboardResults.length} 筆案件</div></div>
               )}
             </div>
-          </div>
+          </>
         )}
       </div>
 

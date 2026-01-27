@@ -42,7 +42,9 @@ import {
   Settings2,
   Edit3,
   Info,
-  History
+  History,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 
 // --- 全域輔助：UUID 生成器 ---
@@ -425,6 +427,7 @@ const App = () => {
 
   const [isManualMode, setIsManualMode] = useState(false);
   const [isAllTimeSearch, setIsAllTimeSearch] = useState(false);
+  const [loadedDocTimestamp, setLoadedDocTimestamp] = useState(null);
 
   const [dashboardFilter, setDashboardFilter] = useState({ 
     search: '', 
@@ -445,6 +448,7 @@ const App = () => {
   const [stationSearch, setStationSearch] = useState('');
   const [isCostSidebarOpen, setIsCostSidebarOpen] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(100);
+  const [sortConfig, setSortConfig] = useState({ key: 'reportDate', direction: 'asc' });
   
   const [formData, setFormData] = useState(getInitialFormState());
   const lastChangedField = useRef(null);
@@ -622,8 +626,21 @@ const App = () => {
       if (dashboardFilter.reportMonth) filtered = filtered.filter(c => String(c.jdmControl?.reportDate || '').startsWith(dashboardFilter.reportMonth));
       if (dashboardFilter.closeMonth) filtered = filtered.filter(c => String(c.jdmControl?.closeDate || '').startsWith(dashboardFilter.closeMonth));
     }
-    return filtered.sort((a, b) => { const dA = String(a.jdmControl?.reportDate || '9999-99-99'); const dB = String(b.jdmControl?.reportDate || '9999-99-99'); return dA.localeCompare(dB); });
-  }, [allCases, dashboardFilter, isDashboardSearchActive]);
+
+    const sortableItems = [...filtered];
+    sortableItems.sort((a, b) => {
+      const valA = String(a.jdmControl?.[sortConfig.key] || '');
+      const valB = String(b.jdmControl?.[sortConfig.key] || '');
+      if (valA < valB) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (valA > valB) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+    return sortableItems;
+  }, [allCases, dashboardFilter, isDashboardSearchActive, sortConfig]);
 
   const isFormDirty = useMemo(() => formData.station !== '' || formData.tenant !== '' || formData.address !== '' || formData.repairItems.length > 0, [formData]);
 
@@ -774,7 +791,7 @@ const App = () => {
     showMessage(`Excel ${exportMode} 已下載`, "success");
   };
 
-  const executeReset = () => { setFormData(getInitialFormState()); setCurrentDocId(null); setIsResetModalOpen(false); setIsManualMode(false); setActiveView('editor'); window.scrollTo({ top: 0, behavior: 'smooth' }); showMessage("已重設案件", "success"); };
+  const executeReset = () => { setFormData(getInitialFormState()); setCurrentDocId(null); setLoadedDocTimestamp(null); setIsResetModalOpen(false); setIsManualMode(false); setActiveView('editor'); window.scrollTo({ top: 0, behavior: 'smooth' }); showMessage("已重設案件", "success"); };
   const handleResetClick = () => (currentDocId || isFormDirty) ? setIsResetModalOpen(true) : executeReset();
 
   const handleFileUpload = (type, e) => {
@@ -1109,12 +1126,52 @@ const App = () => {
     if (needsCaseNumber && !formData.jdmControl.caseNumber.trim()) { showMessage("狀態為提報或結報時，JDM 系統案號必填", "error"); return; }
     if (jdmErrors.length > 0 && !formData.jdmControl.remarks.trim()) { showMessage("偵測到資料邏輯異常，必須於備註說明原因", "error"); return; }
     setIsSaving(true);
+    
     try {
-      const data = { ...formData, totalAmount: calculationSummary.final, updatedAt: serverTimestamp(), createdBy: user.uid };
-      if (currentDocId) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'repair_cases', currentDocId), data);
-      else { const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'), data); setCurrentDocId(docRef.id); }
-      showMessage("案件儲存成功", "success");
-    } catch (e) { showMessage("儲存失敗", "error"); } finally { setIsSaving(false); }
+      if (!currentDocId) {
+        // --- Create a new document ---
+        const data = { ...formData, totalAmount: calculationSummary.final, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: user.uid };
+        const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
+        const docRef = await addDoc(collectionRef, data);
+        setCurrentDocId(docRef.id);
+        setLoadedDocTimestamp(null); // Newly created, no timestamp to check against yet.
+        showMessage("案件建立成功", "success");
+      } else {
+        // --- Update an existing document with transaction for optimistic locking ---
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'repair_cases', currentDocId);
+        await runTransaction(db, async (transaction) => {
+          const docSnapshot = await transaction.get(docRef);
+          if (!docSnapshot.exists()) {
+            throw new Error("文件不存在，可能已被刪除。");
+          }
+
+          const currentDbTimestamp = docSnapshot.data().updatedAt;
+          
+          // Optimistic lock check: Compare timestamps.
+          // loadedDocTimestamp can be null if editing a very old record without this field.
+          // currentDbTimestamp can be undefined if the field doesn't exist yet.
+          // This check handles cases where either or both might be missing.
+          if (loadedDocTimestamp && currentDbTimestamp && !currentDbTimestamp.isEqual(loadedDocTimestamp)) {
+             throw new Error("CONFLICT");
+          }
+
+          // If check passes, proceed with the update.
+          const dataToSave = { ...formData, totalAmount: calculationSummary.final, updatedAt: serverTimestamp() };
+          transaction.update(docRef, dataToSave);
+        });
+        
+        showMessage("案件更新成功", "success");
+      }
+    } catch (e) {
+      if (e.message === "CONFLICT") {
+        showMessage("儲存失敗：此案件已被他人修改，請重新載入。", "error");
+      } else {
+        console.error("Save error:", e);
+        showMessage(`儲存失敗: ${e.message}`, "error");
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const toggleManualMode = () => {
@@ -1133,6 +1190,7 @@ const App = () => {
     };
     setFormData({ ...getInitialFormState(), ...sanitizedCase });
     setCurrentDocId(item.id);
+    setLoadedDocTimestamp(item.updatedAt);
     setIsManualMode(false);
     setActiveView('editor'); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1528,7 +1586,7 @@ const App = () => {
                     {importStatus.isProcessingA ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} 匯入代管清冊
                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => handleFileUpload('A', e)} disabled={importStatus.isProcessingA} />
                   </label>
-                  {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle size={10} /> 已載入 {importStatus.fileNameA}</span>}
+                  {importStatus.fileNameA && !importStatus.isProcessingA && <span className="text-[10px] font-black text-emerald-600">已載入 {importStatus.fileNameA}</span>}
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold text-sm border border-emerald-200 shadow-sm whitespace-nowrap shrink-0 min-w-[130px] ${importStatus.isProcessingB ? 'opacity-50 pointer-events-none' : ''}`}> 
@@ -1674,7 +1732,7 @@ const App = () => {
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-2 shrink-0"><h2 className="text-base font-black text-emerald-800 uppercase tracking-widest whitespace-nowrap shrink-0">4. 結報</h2><div className="flex items-center gap-2 text-xs font-black text-slate-500 whitespace-nowrap shrink-0">完工日期 <input type="date" className={`px-2 py-1.5 rounded-xl border ${formData.completionDate ? HIGHLIGHT_INPUT_STYLE : EDITABLE_INPUT_STYLE} !text-xs cursor-pointer`} value={formData.completionDate} onChange={(e) => updateFormField('completionDate', e.target.value)} /></div></div>
                 <div className="space-y-4">
                   <div className="space-y-1.5"><div className="flex justify-between items-center"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明一</label>{formData.completionDesc1 && (<button onClick={(e) => copyToClipboard(formData.completionDesc1, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div><AutoResizeTextarea value={formData.completionDesc1} onChange={(e) => updateFormField('completionDesc1', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="修繕最終成果" />
-                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" />{formData.completionDesc2 && (<button onClick={(e) => copyToClipboard(formData.completionDesc2, e)} className="flex items-center gap-3 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明結報所檢附之文件" /></div>
+                    <div className="flex justify-between items-center mt-4 mb-1"><label className="text-xs font-black text-slate-500 uppercase whitespace-nowrap shrink-0">完工說明二</label><div className="flex items-center gap-3"><QuickPhraseMenu onSelect={(p) => updateFormField('completionDesc2', p)} type="complete" />{formData.completionDesc2 && (<button onClick={(e) => copyToClipboard(formData.completionDesc2, e)} className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black transition-all hover:bg-blue-100 whitespace-nowrap border border-blue-100"><Copy size={12} /> 複製</button>)}</div></div><AutoResizeTextarea value={formData.completionDesc2} onChange={(e) => updateFormField('completionDesc2', e.target.value)} className="w-full p-4 rounded-2xl bg-white" placeholder="說明結報所檢附之文件" /></div>
                   <div className="pt-4 border-t-2 border-slate-50">
                     <div className="flex items-center justify-between mb-4">
                       <label className="text-xs font-black text-slate-600 uppercase tracking-widest whitespace-nowrap shrink-0">客戶滿意度調查</label>
@@ -1825,7 +1883,24 @@ const App = () => {
               ) : !hasActivatedDashboard ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6"><Search size={64} className="text-slate-100" /><div className="space-y-2"><h3 className="text-xl font-black text-slate-900 whitespace-nowrap">請執行搜尋或選擇過濾條件</h3><p className="text-sm text-slate-500 font-bold max-w-sm mx-auto">選取狀態、站點、月份或關鍵字後，系統將調閱資料</p></div></div>
               ) : (
-                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">提報日期</th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-52 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.slice(0, displayLimit).map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table>
+                <div className="overflow-x-auto custom-scrollbar"><table className="w-full text-left border-collapse table-fixed min-w-[1200px]"><thead className="bg-slate-50 border-b border-slate-100"><tr><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">進度狀態</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let direction = 'asc';
+                        if (sortConfig.key === 'reportDate' && sortConfig.direction === 'asc') {
+                          direction = 'desc';
+                        }
+                        setSortConfig({ key: 'reportDate', direction });
+                      }}
+                      className="flex items-center justify-center gap-1.5 w-full transition-colors hover:text-slate-800"
+                    >
+                      提報日期
+                      {sortConfig.key === 'reportDate' && (
+                        sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                      )}
+                    </button>
+                  </th><th className="w-40 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">案號 / 站點</th><th className="w-72 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">承租人 / 門牌</th><th className="w-60 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">維修概述</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">費用合計</th><th className="w-auto p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">待補資料詳情</th><th className="w-28 p-2 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center whitespace-nowrap">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{dashboardResults.length === 0 ? (<tr><td colSpan="8" className="p-32 text-center text-slate-300 font-black italic text-base">查無符合目前條件之案件</td></tr>) : (dashboardResults.slice(0, displayLimit).map((it) => (<MemoizedRepairRow key={it.id} item={it} onEdit={handleEditCaseInternal} onDelete={handleDeleteTrigger} />)))}</tbody></table>
                   {dashboardResults.length > displayLimit && (
                     <div className="p-4 text-center border-t border-slate-100">
                       <button 

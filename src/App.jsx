@@ -1343,7 +1343,7 @@ const App = () => {
       setIsLoadingDashboard(false);
       setAllCases([]);
     }
-  }, [user, db, hasActivatedDashboard, dashboardFilter, isAllTimeSearch]);
+  }, [user, db, hasActivatedDashboard, dashboardFilter.status, dashboardFilter.stations, isAllTimeSearch]);
 
   useEffect(() => { const t = setTimeout(() => setDebouncedSearchAddress(searchAddress), 300); return () => clearTimeout(t); }, [searchAddress]);
 

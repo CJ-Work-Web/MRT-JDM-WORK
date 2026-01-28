@@ -731,6 +731,10 @@ const App = () => {
     }
   }, [isCostSyncedFromIncome, formData.costItems, formData.incomeItems]);
 
+  const handleExportExcel = () => {
+    if (!window.XLSX) return;
+    
+    if (exportMode === '內控管理') {
       const inCases = dashboardResults.filter(c => c.repairType === '2.1');
       const outCases = dashboardResults.filter(c => c.repairType !== '2.1');
       const calcStats = (list) => {

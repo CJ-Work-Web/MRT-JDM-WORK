@@ -408,7 +408,8 @@ const App = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(true);
   const [floatingTip, setFloatingTip] = useState({ show: false, text: '' });
   const [statusConfirm, setStatusConfirm] = useState({ show: false, target: '', message: '' });
-  const [isCostSyncedFromIncome, setIsCostSyncedFromIncome] = useState(false); // 新增狀態
+  const [isCostSyncedFromIncome, setIsCostSyncedFromIncome] = useState(false);
+  const [isSyncConfirmOpen, setIsSyncConfirmOpen] = useState(false); // 新增狀態
 
   const [queryError, setQueryError] = useState(null);
 
@@ -696,9 +697,28 @@ const App = () => {
     showMessage(`已變更狀態為${target}`, "success");
   };
 
+  const executeCostSync = useCallback(() => {
+    const firstIncome = formData.incomeItems[0];
+    if (firstIncome) {
+      setFormData(prev => {
+        const newCostItems = [...prev.costItems];
+        if (!newCostItems[0]) {
+          newCostItems.unshift({ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' });
+        }
+        newCostItems[0].contractor = firstIncome.source || '';
+        newCostItems[0].costAmount = firstIncome.incomeAmount || '';
+        return { ...prev, costItems: newCostItems };
+      });
+      setIsCostSyncedFromIncome(true);
+      showMessage("已啟用同步，並帶入請款廠商與金額資料", "success");
+    } else {
+      showMessage("無收入項目可供同步", "error");
+    }
+  }, [formData.incomeItems]);
+
   const handleCostSyncToggle = useCallback(() => {
     if (isCostSyncedFromIncome) {
-      // Clear the synced data in the first cost item
+      // Logic to disable sync
       setFormData(prev => {
         const newCostItems = [...prev.costItems];
         if (newCostItems[0]) {
@@ -708,28 +728,17 @@ const App = () => {
         return { ...prev, costItems: newCostItems };
       });
       setIsCostSyncedFromIncome(false);
-      showMessage("已清除費用同步資料", "success");
+      showMessage("已關閉同步並清除資料", "success");
     } else {
-      // Copy data from the first income item to the first cost item
-      const firstIncome = formData.incomeItems[0];
-      if (firstIncome) {
-        setFormData(prev => {
-          const newCostItems = [...prev.costItems];
-          if (!newCostItems[0]) {
-            // If no cost item exists, add a default one at the beginning
-            newCostItems.unshift({ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' });
-          }
-          newCostItems[0].contractor = firstIncome.source || '';
-          newCostItems[0].costAmount = firstIncome.incomeAmount || ''; // Copy income amount to cost amount
-          return { ...prev, costItems: newCostItems };
-        });
-        setIsCostSyncedFromIncome(true);
-        showMessage("已帶入請款廠商與金額資料", "success");
+      // Logic to enable sync (with confirmation)
+      const firstCost = formData.costItems[0];
+      if (firstCost && (String(firstCost.contractor).trim() || String(firstCost.costAmount).trim())) {
+        setIsSyncConfirmOpen(true);
       } else {
-        showMessage("無收入項目可供同步", "error");
+        executeCostSync();
       }
     }
-  }, [isCostSyncedFromIncome, formData.costItems, formData.incomeItems]);
+  }, [isCostSyncedFromIncome, formData.costItems, executeCostSync]);
 
   const handleExportExcel = () => {
     if (!window.XLSX) return;
@@ -1405,6 +1414,30 @@ const App = () => {
   }, [calculationSummary, isSyncEnabled]);
 
   useEffect(() => {
+    if (isCostSyncedFromIncome) {
+      setFormData(prev => {
+        const firstIncome = prev.incomeItems[0];
+        const firstCost = prev.costItems[0];
+
+        // Proceed only if both items exist
+        if (firstIncome && firstCost) {
+          // Check if an update is necessary to prevent infinite loops
+          if (firstCost.contractor !== firstIncome.source || firstCost.costAmount !== firstIncome.incomeAmount) {
+            const newCostItems = [...prev.costItems];
+            newCostItems[0] = {
+              ...newCostItems[0],
+              contractor: firstIncome.source || '',
+              costAmount: firstIncome.incomeAmount || 0
+            };
+            return { ...prev, costItems: newCostItems };
+          }
+        }
+        return prev; // No change needed
+      });
+    }
+  }, [isCostSyncedFromIncome, formData.incomeItems]);
+
+  useEffect(() => {
     if (isCostSidebarOpen) { document.body.style.overflow = 'hidden'; } 
     else { document.body.style.overflow = 'auto'; }
     return () => { document.body.style.overflow = 'auto'; };
@@ -1490,6 +1523,21 @@ const App = () => {
             <h3 className="text-xl font-black text-slate-900">永久刪除此案件？</h3>
             <p className="text-sm text-slate-600 font-bold">刪除後資料將無法恢復。</p>
             <div className="flex gap-3 mt-4"><button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-sm">返回</button><button onClick={executeDelete} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-black text-sm shadow-lg shadow-rose-200">永久刪除</button></div>
+          </div>
+        </div>
+      )}
+
+      {isSyncConfirmOpen && (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsSyncConfirmOpen(false)}></div>
+          <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-sm w-full relative z-10 text-center space-y-4 border">
+            <div className="p-4 bg-amber-50 text-amber-500 rounded-full w-fit mx-auto"><AlertTriangle size={40} /></div>
+            <h3 className="text-xl font-black text-slate-900">啟用同步？</h3>
+            <p className="text-sm text-slate-600 font-bold">啟用同步後將覆蓋現有資料，是否確定？</p>
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setIsSyncConfirmOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-sm">取消</button>
+              <button onClick={() => { executeCostSync(); setIsSyncConfirmOpen(false); }} className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-black text-sm shadow-lg shadow-amber-200">確認同步</button>
+            </div>
           </div>
         </div>
       )}

@@ -408,6 +408,7 @@ const App = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(true);
   const [floatingTip, setFloatingTip] = useState({ show: false, text: '' });
   const [statusConfirm, setStatusConfirm] = useState({ show: false, target: '', message: '' });
+  const [isCostSyncedFromIncome, setIsCostSyncedFromIncome] = useState(false); // 新增狀態
 
   const [queryError, setQueryError] = useState(null);
 
@@ -695,10 +696,41 @@ const App = () => {
     showMessage(`已變更狀態為${target}`, "success");
   };
 
-  const handleExportExcel = () => {
-    if (!window.XLSX) return;
-    
-    if (exportMode === '內控管理') {
+  const handleCostSyncToggle = useCallback(() => {
+    if (isCostSyncedFromIncome) {
+      // Clear the synced data in the first cost item
+      setFormData(prev => {
+        const newCostItems = [...prev.costItems];
+        if (newCostItems[0]) {
+          newCostItems[0].contractor = '';
+          newCostItems[0].costAmount = '';
+        }
+        return { ...prev, costItems: newCostItems };
+      });
+      setIsCostSyncedFromIncome(false);
+      showMessage("已清除費用同步資料", "success");
+    } else {
+      // Copy data from the first income item to the first cost item
+      const firstIncome = formData.incomeItems[0];
+      if (firstIncome) {
+        setFormData(prev => {
+          const newCostItems = [...prev.costItems];
+          if (!newCostItems[0]) {
+            // If no cost item exists, add a default one at the beginning
+            newCostItems.unshift({ id: generateUUID(), contractor: '', workTask: '', invoiceNumber: '', billingDate: '', costAmount: '', voucherNumber: '', remarks: '' });
+          }
+          newCostItems[0].contractor = firstIncome.source || '';
+          newCostItems[0].costAmount = firstIncome.incomeAmount || ''; // Copy income amount to cost amount
+          return { ...prev, costItems: newCostItems };
+        });
+        setIsCostSyncedFromIncome(true);
+        showMessage("已帶入請款廠商與金額資料", "success");
+      } else {
+        showMessage("無收入項目可供同步", "error");
+      }
+    }
+  }, [isCostSyncedFromIncome, formData.costItems, formData.incomeItems]);
+
       const inCases = dashboardResults.filter(c => c.repairType === '2.1');
       const outCases = dashboardResults.filter(c => c.repairType !== '2.1');
       const calcStats = (list) => {
@@ -1486,7 +1518,17 @@ const App = () => {
                 <div key={item.id} className="relative bg-white p-3 rounded-2xl border border-slate-200 shadow-sm group">
 <div className="space-y-2">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">維修廠商</label><input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.contractor} onChange={(e) => { const n = [...formData.costItems]; n[idx].contractor = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
+                      <div className="md:col-span-2 space-y-1">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">維修廠商</label>
+                          {idx === 0 && (
+                            <button onClick={handleCostSyncToggle} className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-100 rounded border flex items-center gap-1 transition-all hover:bg-slate-200 shrink-0">
+                              {isCostSyncedFromIncome ? <Link2 size={9}/> : <Link2Off size={9}/>}
+                              {isCostSyncedFromIncome ? "資料同步中" : "帶入請款廠商資料"}
+                            </button>
+                          )}
+                        </div>
+                        <input type="text" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.contractor} onChange={(e) => { const n = [...formData.costItems]; n[idx].contractor = e.target.value; setFormData({...formData, costItems: n}); }} /></div>
                       <div className="space-y-1 relative"><label className="text-[10px] font-black text-slate-500 uppercase whitespace-nowrap shrink-0 ml-1">發票日期</label><input type="date" className={`w-full ${SIDEBAR_INPUT_STYLE} rounded-xl`} value={item.billingDate} onChange={(e) => { const n = [...formData.costItems]; n[idx].billingDate = e.target.value; setFormData({...formData, costItems: n}); }} /><button onClick={() => setFormData({...formData, costItems: formData.costItems.filter(ci => ci.id !== item.id)})} className="absolute -top-1 -right-1 p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1840,7 +1882,7 @@ const App = () => {
                       </div>
                     )}
                   </div>
-                  <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-6 py-3 rounded-2xl font-black text-sm border ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}>
+                  <div className="relative group shrink-0"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Filter size={16} /></div><select className={`pl-10 pr-4 py-3 rounded-2xl font-black text-sm border ${EDITABLE_INPUT_STYLE}`} value={dashboardFilter.status} onChange={(e) => setDashboardFilter({...dashboardFilter, status: e.target.value})}>
 <option>未完成案件</option><option>全部</option><option disabled className="bg-slate-100 text-slate-400">--- 常規狀態 ---</option><option>待提報</option><option>提報</option><option>抽換</option><option>退件</option><option>結報</option></select></div>
                   <div className="relative"> {/* Added relative container */}
                     <button onClick={() => setIsSpecialSearchOpen(!isSpecialSearchOpen)} className={`flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-sm border transition-all hover:bg-slate-50 shadow-sm ${dashboardFilter.reportMonth || dashboardFilter.closeMonth || dashboardFilter.specialFormula ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-300 text-slate-700'}`}><Settings2 size={16} /> 特殊搜尋</button>

@@ -599,10 +599,10 @@ const App = () => {
         (String(c.address || '')).toLowerCase().includes(s) || 
         (String(c.tenant || '')).toLowerCase().includes(s) || 
         (String(c.station || '')).toLowerCase().includes(s) || 
-        (String(c.jdmControl?.caseNumber || '')).toLowerCase().includes(s) ||
-        (String(c.quoteTitle || '')).toLowerCase().includes(s) || 
-        (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))
-      );
+                (String(c.jdmControl?.caseNumber || '')).toLowerCase().includes(s) ||
+                (String(c.quoteTitle || '')).toLowerCase().includes(s) ||
+                (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s)) ||
+                (String(c.id || '')).toLowerCase().includes(s)      );
     }
     if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
     if (dashboardFilter.status !== '全部') {
@@ -1714,7 +1714,14 @@ const App = () => {
                 <div className="flex items-center gap-3 ml-2 border-l-2 pl-3 self-start">
                   <button onClick={handleResetClick} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><Plus size={14} /> 建立新案件</button>
                   <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><User size={14} /> 登出</button>
-                  <button onClick={handleSaveToCloud} disabled={isSaving || configError} className={`flex items-center gap-2 px-8 py-2 text-white rounded-xl font-black text-sm transition shadow-lg active:scale-95 whitespace-nowrap shrink-0 ${currentDocId ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} ${configError ? 'opacity-50 cursor-not-allowed' : ''}`}>{isSaving ? <Clock className="animate-spin" size={16} /> : <Save size={16} />} {isSaving ? '儲存中' : '儲存案件'}</button>
+                  <div className="flex flex-col items-end">
+                    <button onClick={handleSaveToCloud} disabled={isSaving || configError} className={`flex items-center gap-2 px-8 py-2 text-white rounded-xl font-black text-sm transition shadow-lg active:scale-95 whitespace-nowrap shrink-0 ${currentDocId ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} ${configError ? 'opacity-50 cursor-not-allowed' : ''}`}>{isSaving ? <Clock className="animate-spin" size={16} /> : <Save size={16} />} {isSaving ? '儲存中' : '儲存案件'}</button>
+                    {currentDocId && (
+                      <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1 mt-1">
+                          <Hash size={10} /> 系統編號: {currentDocId}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

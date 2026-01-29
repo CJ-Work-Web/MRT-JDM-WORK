@@ -119,6 +119,7 @@ const chunkArray = (array, size) => {
 
 function getInitialFormState() {
   return {
+    displayId: null,
     station: '', 
     address: '', 
     tenant: '', 
@@ -600,8 +601,9 @@ const App = () => {
         (String(c.tenant || '')).toLowerCase().includes(s) || 
         (String(c.station || '')).toLowerCase().includes(s) || 
                         (String(c.jdmControl?.caseNumber || '')).toLowerCase().includes(s) ||
-                        (String(c.quoteTitle || '')).toLowerCase().includes(s) ||
-                        (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s))      );
+                                (String(c.quoteTitle || '')).toLowerCase().includes(s) || 
+                                (c.repairItems || []).some(ri => (String(ri.name || '')).toLowerCase().includes(s)) ||
+                                (String(c.displayId || '')).toLowerCase().includes(s)      );
     }
     if (dashboardFilter.stations.length > 0) filtered = filtered.filter(c => dashboardFilter.stations.includes(c.station));
     if (dashboardFilter.status !== '全部') {
@@ -1185,12 +1187,36 @@ const App = () => {
 
     try {
       if (!currentDocId) {
-        // --- Create a new document ---
-        const finalNewData = { ...dataToSave, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: user.uid };
-        const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases');
-        const docRef = await addDoc(collectionRef, finalNewData);
-        setCurrentDocId(docRef.id);
-        setLoadedDocTimestamp(null); // Newly created, no timestamp to check against yet.
+        // --- Create a new document with transaction ---
+        const counterRef = doc(db, 'counters', 'repair_cases');
+        const { newDocId, newDisplayId } = await runTransaction(db, async (transaction) => {
+          const counterDoc = await transaction.get(counterRef);
+          if (!counterDoc.exists()) {
+            throw new Error("計數器文件 'counters/repair_cases' 不存在!");
+          }
+
+          const generatedDisplayId = counterDoc.data().current_id + 1;
+          transaction.update(counterRef, { current_id: generatedDisplayId });
+          
+          const newCaseRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'repair_cases'));
+          
+          const finalNewData = {
+            ...dataToSave,
+            displayId: generatedDisplayId,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdBy: user.uid
+          };
+          
+          transaction.set(newCaseRef, finalNewData);
+          
+          return { newDocId: newCaseRef.id, newDisplayId: generatedDisplayId };
+        });
+
+        // Update state after successful transaction
+        setCurrentDocId(newDocId);
+        setFormData(prev => ({...prev, displayId: newDisplayId}));
+        setLoadedDocTimestamp(null);
         showMessage("案件建立成功", "success");
       } else {
         // --- Update an existing document with transaction for optimistic locking ---
@@ -1713,7 +1739,14 @@ const App = () => {
                 <div className="flex items-center gap-3 ml-2 border-l-2 pl-3 self-start">
                   <button onClick={handleResetClick} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><Plus size={14} /> 建立新案件</button>
                   <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0"><User size={14} /> 登出</button>
-                  <button onClick={handleSaveToCloud} disabled={isSaving || configError} className={`flex items-center gap-2 px-8 py-2 text-white rounded-xl font-black text-sm transition shadow-lg active:scale-95 whitespace-nowrap shrink-0 ${currentDocId ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} ${configError ? 'opacity-50 cursor-not-allowed' : ''}`}>{isSaving ? <Clock className="animate-spin" size={16} /> : <Save size={16} />} {isSaving ? '儲存中' : '儲存案件'}</button>
+                  <div className="flex flex-col items-end">
+                    <button onClick={handleSaveToCloud} disabled={isSaving || configError} className={`flex items-center gap-2 px-8 py-2 text-white rounded-xl font-black text-sm transition shadow-lg active:scale-95 whitespace-nowrap shrink-0 ${currentDocId ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} ${configError ? 'opacity-50 cursor-not-allowed' : ''}`}>{isSaving ? <Clock className="animate-spin" size={16} /> : <Save size={16} />} {isSaving ? '儲存中' : '儲存案件'}</button>
+                    {formData.displayId && (
+                      <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1 mt-1">
+                          案件ID: {formData.displayId}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
